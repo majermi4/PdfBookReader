@@ -10,7 +10,7 @@ const sampleBook = {
   id: 'fundamentals-of-software-architecture',
   title: 'Fundamentals of Software Architecture',
   authors: 'Mark Richards & Neal Ford',
-  source: '/sample/OReilly.Fundamentals.of.Software.Architecture.2020.1.pdf',
+  source: `${import.meta.env.BASE_URL}sample/OReilly.Fundamentals.of.Software.Architecture.2020.1.pdf`,
 };
 
 const readingKey = (name: string) => `quiet-reader:${sampleBook.id}:${name}`;
