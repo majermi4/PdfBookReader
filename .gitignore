@@ -1,0 +1,13 @@
+# Local dependencies and generated output
+node_modules/
+dist/
+
+# Personal/local PDF books - never commit these
+sample/
+public/sample/
+
+# Local machine and secret configuration
+.DS_Store
+.env
+.env.*
+!.env.example
