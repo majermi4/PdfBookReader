@@ -7,10 +7,10 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 ).toString();
 
 const sampleBook = {
-  id: 'fundamentals-of-software-architecture',
-  title: 'Fundamentals of Software Architecture',
-  authors: 'Mark Richards & Neal Ford',
-  source: `${import.meta.env.BASE_URL}sample/OReilly.Fundamentals.of.Software.Architecture.2020.1.pdf`,
+  id: 'quiet-reader-demo',
+  title: 'A Short Guide to Quiet Reading',
+  authors: 'Quiet Reader',
+  source: `${import.meta.env.BASE_URL}demo/quiet-reader-demo.pdf`,
 };
 
 const readingKey = (name: string) => `quiet-reader:${sampleBook.id}:${name}`;
@@ -405,7 +405,7 @@ function Library({
           <img className="book-cover" src="/fundamentals-cover.png" alt="" />
           <span className="book-details">
             <span className="book-title">{sampleBook.title}</span>
-            <span className="book-meta">{sampleBook.authors} · Local sample PDF</span>
+            <span className="book-meta">{sampleBook.authors} · Demo PDF</span>
           </span>
           <span className="book-progress">
             <strong>Main bookmark · p. {bookmark}</strong>
