@@ -272,6 +272,7 @@ function PdfPage({
   return (
     <div
       className={renderWidth ? 'continuous-pdf-page' : 'pdf-stage'}
+      data-pdf-page={pageNumber}
       ref={stageRef}
       style={renderWidth ? { width: `${renderWidth}px` } : undefined}
     >
@@ -324,6 +325,7 @@ function ContinuousPdf({
   const restoredRef = useRef(false);
   const lastJumpIdRef = useRef(0);
   const lastScrollRequestIdRef = useRef(0);
+  const pendingPageAlignmentRef = useRef<{ behavior: ScrollBehavior; page: number } | null>(null);
   const lastReportedPageRef = useRef(initialPage);
   const currentPageRef = useRef(initialPage);
   const [containerWidth, setContainerWidth] = useState(0);
@@ -361,8 +363,25 @@ function ContinuousPdf({
   const scrollToPage = useCallback((page: number, behavior: ScrollBehavior) => {
     const scroll = scrollRef.current;
     if (!scroll) return;
+    const renderedPage = scroll.querySelector<HTMLElement>(`[data-pdf-page="${page}"]`);
+    if (renderedPage) {
+      pendingPageAlignmentRef.current = null;
+      scroll.scrollTo({ top: renderedPage.offsetTop, behavior });
+      return;
+    }
+    pendingPageAlignmentRef.current = { behavior, page };
     scroll.scrollTo({ top: Math.max(0, page - 1) * pageUnit, behavior });
   }, [pageUnit]);
+
+  useEffect(() => {
+    const pending = pendingPageAlignmentRef.current;
+    const scroll = scrollRef.current;
+    if (!pending || !scroll) return;
+    const renderedPage = scroll.querySelector<HTMLElement>(`[data-pdf-page="${pending.page}"]`);
+    if (!renderedPage) return;
+    pendingPageAlignmentRef.current = null;
+    scroll.scrollTo({ top: renderedPage.offsetTop, behavior: pending.behavior });
+  }, [currentPage, firstRendered, lastRendered, pageWidth]);
 
   useEffect(() => {
     if (!restoredRef.current && containerWidth) {
@@ -387,7 +406,7 @@ function ContinuousPdf({
     if (!scroll || scrollRequest.id === 0 || scrollRequest.id === lastScrollRequestIdRef.current) return;
     lastScrollRequestIdRef.current = scrollRequest.id;
     scroll.scrollBy({
-      top: scrollRequest.direction * Math.max(240, Math.round(scroll.clientHeight * .78)),
+      top: scrollRequest.direction * Math.max(180, Math.round(scroll.clientHeight * .45)),
       behavior: 'smooth',
     });
   }, [scrollRequest]);
