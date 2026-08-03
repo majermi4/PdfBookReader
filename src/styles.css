@@ -184,16 +184,42 @@ h1 { font-size: 34px; letter-spacing: -.055em; margin: 0; }
 .reader-error { background: #f8e4df; border-radius: 10px; color: #7c2f22; max-width: min(500px, 90vw); padding: 14px 16px; text-align: center; }
 
 @media (max-width: 640px) {
-  .library-page { padding: 20px 20px 56px; }
+  .library-page { padding: 24px 20px 56px; }
   .library-content { margin-top: 44px; }
   h1 { font-size: 30px; }
+  .app-name { font-size: 22px; }
+  .library-content > p, .book-meta { font-size: 17px; }
+  .drive-button { font-size: 17px; min-height: 48px; padding: 12px 16px; }
   .book-row { gap: 13px; grid-template-columns: 50px minmax(0, 1fr); }
-  .book-progress { grid-column: 2; text-align: left; }
-  .reader-toolbar { align-items: flex-start; flex-wrap: wrap; gap: 4px 8px; padding: 12px 14px; }
-  .reader-title { flex-basis: 56%; order: 2; }
+  .book-title { font-size: 18px; }
+  .book-progress { font-size: 16px; grid-column: 2; text-align: left; }
+  .reader-toolbar { align-items: flex-start; flex-wrap: wrap; gap: 8px 10px; padding: 14px 16px; }
+  .reader-toolbar .text-button { font-size: 17px; min-height: 48px; padding: 10px 8px; }
+  .reader-title { flex-basis: 100%; font-size: 18px; line-height: 1.2; order: 2; }
   .reader-actions { margin-left: auto; }
-  .contents-panel, .pdf-search-panel { right: 12px; top: 62px; }
-  .reader-controls { bottom: 12px; }
-  .reader-controls button { padding: 9px 10px; }
-  .display-settings, .note-editor { bottom: 76px; }
+  .reader-icon-button { height: 48px; width: 48px; }
+  .reader-icon-button svg { height: 23px; width: 23px; }
+  .contents-panel, .pdf-search-panel { left: 12px; max-height: min(620px, calc(100dvh - 132px)); right: 12px; top: 118px; width: auto; }
+  .contents-header, .search-panel-header { min-height: 56px; padding: 10px 14px; }
+  .contents-header h2, .search-panel-header h2 { font-size: 20px; }
+  .contents-header button, .search-panel-header button { height: 40px; width: 40px; }
+  .panel-search { padding: 10px 12px; }
+  .panel-search input { font-size: 16px; min-height: 42px; }
+  .contents-list, .pdf-search-results { max-height: min(548px, calc(100dvh - 212px)); }
+  .contents-list button { font-size: 16px; min-height: 42px; padding-bottom: 9px; padding-top: 9px; }
+  .contents-list button small { font-size: 13px; }
+  .pdf-search-results button { font-size: 16px; padding: 12px 14px; }
+  .pdf-search-results button small { font-size: 13px; }
+  .pdf-search-results button span { font-size: 15px; }
+  .reader-controls { bottom: 14px; min-height: 54px; padding: 4px 6px; }
+  .reader-controls button, .page-indicator { font-size: 17px; }
+  .reader-controls button { min-height: 44px; padding: 9px 12px; }
+  .page-indicator { padding: 0 10px 0 12px; }
+  .control-divider { height: 28px; }
+  .display-settings, .note-editor { bottom: 84px; }
+  .display-settings { font-size: 17px; min-height: 54px; }
+  .display-settings button { min-height: 42px; padding: 9px 12px; }
+  .note-editor { font-size: 16px; padding: 18px; width: calc(100vw - 24px); }
+  .note-editor textarea { font-size: 16px; min-height: 132px; }
+  .note-editor-actions button { font-size: 16px; min-height: 42px; }
 }
