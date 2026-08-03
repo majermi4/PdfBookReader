@@ -69,6 +69,17 @@ type HighlightBox = {
   height: number;
 };
 
+type LinkedTextNote = Pick<PageNote, 'id' | 'selectedText'>;
+
+function linkedNoteForText(text: string, notes: LinkedTextNote[]) {
+  const normalizedText = text.replace(/\s+/g, ' ').trim().toLowerCase();
+  if (normalizedText.length < 3) return undefined;
+  return notes.find((note) => {
+    const selection = note.selectedText?.replace(/\s+/g, ' ').trim().toLowerCase();
+    return selection && (selection.includes(normalizedText) || normalizedText.includes(selection));
+  });
+}
+
 function isExpectedPdfCancellation(error: unknown) {
   if (!(error instanceof Error)) return false;
   return error.name === 'RenderingCancelledException'
@@ -186,6 +197,8 @@ function PdfPage({
   searchQuery,
   onRenderError,
   onTextSelected,
+  linkedNotes,
+  onLinkedNoteOpen,
 }: {
   document: pdfjs.PDFDocumentProxy;
   pageNumber: number;
@@ -193,6 +206,8 @@ function PdfPage({
   searchQuery: string;
   onRenderError: (message: string) => void;
   onTextSelected: (page: number, text: string) => void;
+  linkedNotes: LinkedTextNote[];
+  onLinkedNoteOpen: (noteId: string) => void;
 }) {
   const stageRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -326,19 +341,28 @@ function PdfPage({
         </div>
       )}
       <div className="pdf-text-layer" onMouseUp={captureTextSelection} onTouchEnd={captureTextSelection}>
-        {textLayer.map((item, index) => (
-          <span
-            key={`${index}-${item.left}-${item.top}`}
-            style={{
-              fontSize: `${item.fontSize}px`,
-              left: `${item.left}px`,
-              top: `${item.top}px`,
-              transform: item.transform,
-            }}
-          >
-            {item.text}
-          </span>
-        ))}
+        {textLayer.map((item, index) => {
+          const linkedNote = linkedNoteForText(item.text, linkedNotes);
+          return (
+            <span
+              className={linkedNote ? 'linked-note-text' : undefined}
+              key={`${index}-${item.left}-${item.top}`}
+              onClick={(event) => {
+                if (!linkedNote || !window.getSelection()?.isCollapsed) return;
+                event.stopPropagation();
+                onLinkedNoteOpen(linkedNote.id);
+              }}
+              style={{
+                fontSize: `${item.fontSize}px`,
+                left: `${item.left}px`,
+                top: `${item.top}px`,
+                transform: item.transform,
+              }}
+            >
+              {item.text}
+            </span>
+          );
+        })}
       </div>
     </div>
   );
@@ -357,6 +381,8 @@ function ContinuousPdf({
   onReaderClick,
   onRenderError,
   onTextSelected,
+  notes,
+  onLinkedNoteOpen,
 }: {
   document: pdfjs.PDFDocumentProxy;
   pageCount: number;
@@ -370,6 +396,8 @@ function ContinuousPdf({
   onReaderClick: () => void;
   onRenderError: (message: string) => void;
   onTextSelected: (page: number, text: string) => void;
+  notes: PageNote[];
+  onLinkedNoteOpen: (noteId: string) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const restoredRef = useRef(false);
@@ -512,6 +540,8 @@ function ContinuousPdf({
               key={pageNumber}
               onRenderError={onRenderError}
               onTextSelected={onTextSelected}
+              linkedNotes={notes.filter((note) => note.page === pageNumber && Boolean(note.selectedText))}
+              onLinkedNoteOpen={onLinkedNoteOpen}
               pageNumber={pageNumber}
               renderWidth={pageWidth}
               searchQuery={searchQuery}
@@ -541,10 +571,26 @@ function Library({
   onAddFromDrive: () => void;
   onOpen: (book: Book) => void;
 }) {
+  const [notesOpen, setNotesOpen] = useState(false);
+  const allNotes = books.flatMap((book) => readStoredNotes(book.id).map((note) => ({ book, note })));
+
   return (
     <main className="library-page">
       <header className="library-header">
         <span className="app-name">Quiet Reader</span>
+        <button
+          aria-expanded={notesOpen}
+          aria-label="Show all notes"
+          className="library-notes-button"
+          title="All notes"
+          type="button"
+          onClick={() => setNotesOpen((open) => !open)}
+        >
+          <svg aria-hidden="true" viewBox="0 0 24 24">
+            <path d="M5 4.5h14v11H9l-4 4v-15Z" />
+            <path d="M8.5 8h7M8.5 11.5h5" />
+          </svg>
+        </button>
       </header>
       <section className="library-content" aria-labelledby="library-title">
         <h1 id="library-title">My books</h1>
@@ -594,6 +640,23 @@ function Library({
           })}
         </div>
       </section>
+      {notesOpen && (
+        <aside className="library-notes-panel" aria-label="All notes">
+          <header>
+            <h2>All notes</h2>
+            <button aria-label="Close all notes" type="button" onClick={() => setNotesOpen(false)}>×</button>
+          </header>
+          <div>
+            {allNotes.length ? allNotes.map(({ book, note }) => (
+              <article key={`${book.id}-${note.id}`}>
+                <small>{book.title} · p. {note.page}</small>
+                {note.selectedText && <blockquote>{note.selectedText}</blockquote>}
+                <p>{note.text}</p>
+              </article>
+            )) : <p className="empty-notes">No notes yet.</p>}
+          </div>
+        </aside>
+      )}
     </main>
   );
 }
@@ -629,6 +692,7 @@ export default function App() {
   const pdfSearchJobRef = useRef(0);
   const [noteDraft, setNoteDraft] = useState('');
   const [selectedQuote, setSelectedQuote] = useState<{ page: number; text: string } | null>(null);
+  const [focusedNoteId, setFocusedNoteId] = useState<string | null>(null);
   const [fullWidth, setFullWidth] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [jumpRequest, setJumpRequest] = useState({ id: 0, page: 1 });
@@ -759,6 +823,7 @@ export default function App() {
     }]);
     setNoteDraft('');
     setSelectedQuote(null);
+    setFocusedNoteId(null);
     window.getSelection()?.removeAllRanges();
     setNoteEditorOpen(false);
   };
@@ -769,8 +834,19 @@ export default function App() {
 
   const captureTextSelection = useCallback((selectedPage: number, text: string) => {
     setSelectedQuote({ page: selectedPage, text });
+    setFocusedNoteId(null);
     setControlsVisible(true);
   }, []);
+
+  const openLinkedNote = useCallback((noteId: string) => {
+    const note = notes.find((item) => item.id === noteId);
+    if (!note) return;
+    setPage(note.page);
+    setSelectedQuote(null);
+    setFocusedNoteId(note.id);
+    setNoteEditorOpen(true);
+    setControlsVisible(true);
+  }, [notes]);
 
   const clearPdfSearch = () => {
     setPdfQuery('');
@@ -787,6 +863,7 @@ export default function App() {
     setPdfQuery('');
     setPdfSearchResults([]);
     setSelectedQuote(null);
+    setFocusedNoteId(null);
     setError(null);
     setScreen('reader');
   };
@@ -939,6 +1016,13 @@ export default function App() {
           onPageChange={setPage}
           onReaderClick={() => {
             if (window.getSelection()?.toString().trim()) return;
+            if (selectedQuote) {
+              setSelectedQuote(null);
+              setFocusedNoteId(null);
+              return;
+            }
+            setSelectedQuote(null);
+            setFocusedNoteId(null);
             if (controlsVisible) {
               setNoteEditorOpen(false);
               setBookmarkMenuOpen(false);
@@ -952,6 +1036,8 @@ export default function App() {
           }}
           onRenderError={setError}
           onTextSelected={captureTextSelection}
+          notes={notes}
+          onLinkedNoteOpen={openLinkedNote}
           pageCount={pageCount}
           searchQuery={pdfQuery.trim().length >= 2 ? pdfQuery : ''}
           zoom={zoom}
@@ -1049,6 +1135,7 @@ export default function App() {
               setTocSearchOpen(false);
               setTocQuery('');
               setPdfSearchOpen(false);
+              setFocusedNoteId(null);
               setNoteEditorOpen(true);
             }}>
               Note{selectedQuote ? ' · selection' : notesOnPage.length ? ` · ${notesOnPage.length}` : ''}
@@ -1214,7 +1301,7 @@ export default function App() {
           {notesOnPage.length > 0 && (
             <div className="saved-notes" aria-label={`Notes on PDF page ${page}`}>
               {notesOnPage.map((note) => (
-                <article className="saved-note" key={note.id}>
+                <article className={note.id === focusedNoteId ? 'saved-note is-focused' : 'saved-note'} key={note.id}>
                   {note.selectedText && <blockquote>{note.selectedText}</blockquote>}
                   <p>{note.text}</p>
                   <button aria-label="Delete note" type="button" onClick={() => deleteNote(note.id)}>Delete</button>
@@ -1230,6 +1317,7 @@ export default function App() {
               </div>
               <button type="button" onClick={() => {
                 setSelectedQuote(null);
+                setFocusedNoteId(null);
                 window.getSelection()?.removeAllRanges();
               }}>Remove</button>
             </div>

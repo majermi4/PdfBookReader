@@ -13,9 +13,15 @@ button { font: inherit; }
 
 .library-page { min-height: 100dvh; padding: 28px clamp(24px, 7vw, 112px) 72px; }
 
-.library-header { align-items: center; display: flex; height: 44px; }
+.library-header { align-items: center; display: flex; height: 44px; justify-content: space-between; }
 
 .app-name { font-size: 20px; font-weight: 600; letter-spacing: -.035em; }
+
+.library-notes-button { align-items: center; background: transparent; border: 1px solid #c9d0c7; border-radius: 9px; color: #315f42; cursor: pointer; display: inline-flex; height: 40px; justify-content: center; width: 40px; }
+
+.library-notes-button:hover, .library-notes-button[aria-expanded="true"] { background: #e5eee5; }
+
+.library-notes-button svg { fill: none; height: 21px; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; width: 21px; }
 
 .library-content { margin-top: 62px; max-width: 940px; }
 
@@ -51,6 +57,26 @@ h1 { font-size: 34px; letter-spacing: -.055em; margin: 0; }
 
 .book-progress-meter > span { background: #4d8a61; display: block; height: 100%; min-width: 0; }
 
+.library-notes-panel { background: #f7f8f3; border: 1px solid #dce1d9; border-radius: 14px; box-shadow: 0 16px 40px rgb(0 0 0 / .14); max-height: min(680px, calc(100dvh - 96px)); overflow: hidden; position: fixed; right: clamp(20px, 5vw, 80px); top: 80px; width: min(410px, calc(100vw - 32px)); z-index: 4; }
+
+.library-notes-panel > header { align-items: center; border-bottom: 1px solid #dce1d9; display: flex; justify-content: space-between; padding: 12px 14px; }
+
+.library-notes-panel h2 { font-size: 18px; letter-spacing: -.03em; margin: 0; }
+
+.library-notes-panel header button { background: transparent; border: 0; color: #4d554e; cursor: pointer; font-size: 26px; line-height: 1; padding: 0 4px 4px; }
+
+.library-notes-panel > div { max-height: min(610px, calc(100dvh - 166px)); overflow-y: auto; }
+
+.library-notes-panel article { border-bottom: 1px solid #e0e4de; padding: 12px 14px; }
+
+.library-notes-panel small { color: #315f42; font-size: 12px; font-weight: 650; }
+
+.library-notes-panel blockquote { border-left: 2px solid #91b69a; color: #536257; font-size: 14px; line-height: 1.35; margin: 8px 0; padding-left: 9px; }
+
+.library-notes-panel p { line-height: 1.4; margin: 8px 0 0; }
+
+.empty-notes { color: #687169; padding: 14px; }
+
 .book-loading-copy { display: block; }
 
 .book-progress-meter.is-loading > span { animation: book-loading 1.1s ease-in-out infinite; background: #4d8a61; width: 42%; }
@@ -82,6 +108,8 @@ h1 { font-size: 34px; letter-spacing: -.055em; margin: 0; }
 .pdf-text-layer span { color: transparent; cursor: text; line-height: 1; position: absolute; transform-origin: 0 0; white-space: pre; }
 
 .pdf-text-layer span::selection { background: rgb(121 193 139 / .5); }
+
+.pdf-text-layer .linked-note-text { background: rgb(132 201 143 / .42); border-radius: 2px; box-shadow: inset 0 -1px 0 rgb(48 108 62 / .4); cursor: pointer; }
 
 .reader-toolbar { align-items: center; backdrop-filter: blur(14px); background: rgb(22 26 22 / .94); border-bottom: 1px solid rgb(255 255 255 / .11); box-shadow: 0 6px 18px rgb(0 0 0 / .18); display: flex; gap: 16px; left: 0; padding: calc(18px + env(safe-area-inset-top)) clamp(18px, 5vw, 76px) 18px; position: absolute; right: 0; top: 0; z-index: 1; }
 
@@ -196,6 +224,8 @@ h1 { font-size: 34px; letter-spacing: -.055em; margin: 0; }
 .saved-notes { border-top: 1px solid #dce1d9; margin: 0 0 12px; max-height: 142px; overflow: auto; }
 
 .saved-note { align-items: flex-start; border-bottom: 1px solid #dce1d9; display: flex; gap: 10px; justify-content: space-between; padding: 9px 0; }
+
+.saved-note.is-focused { background: #edf3ec; border-radius: 7px; margin: 0 -7px; padding-left: 7px; padding-right: 7px; }
 
 .saved-note p { line-height: 1.35; margin: 0; }
 
