@@ -111,8 +111,9 @@ export function parseReaderSyncRecord(value: unknown): ReaderSyncRecord | null {
     || !isTimestamp(value.updatedAt)
     || !Array.isArray(value.books)
     || !isRecord(value.reading)) return null;
-  const reading = Object.entries(value.reading).reduce<Record<string, SyncedReadingState>>((result, [bookId, state]) => {
-    const parsed = parseReadingState(state);
+  const rawReading = value.reading;
+  const reading = Object.keys(rawReading).reduce<Record<string, SyncedReadingState>>((result, bookId) => {
+    const parsed = parseReadingState(rawReading[bookId]);
     if (parsed) result[bookId] = parsed;
     return result;
   }, {});
@@ -178,10 +179,16 @@ export function mergeReaderSyncRecords(local: ReaderSyncRecord, remote: ReaderSy
     const merged = mergeReadingState(local.reading[bookId], remote.reading[bookId]);
     if (merged) reading[bookId] = merged;
   }
-  const latestReadingUpdate = Object.values(reading).reduce(
-    (latest, state) => Math.max(latest, state.lastPageUpdatedAt, state.bookmarkUpdatedAt, ...state.notes.map((note) => note.updatedAt), ...state.deletedNotes.map((note) => note.deletedAt)),
-    0,
-  );
+  const latestReadingUpdate = Object.keys(reading).reduce((latest, bookId) => {
+    const state = reading[bookId];
+    return Math.max(
+      latest,
+      state.lastPageUpdatedAt,
+      state.bookmarkUpdatedAt,
+      ...state.notes.map((note) => note.updatedAt),
+      ...state.deletedNotes.map((note) => note.deletedAt),
+    );
+  }, 0);
   return {
     books: [...books.values()].sort((a, b) => a.title.localeCompare(b.title)),
     reading,

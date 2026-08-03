@@ -153,8 +153,7 @@ export class DriveAppDataConflictError extends Error {
 }
 
 function createMultipartBoundary() {
-  const uuid = globalThis.crypto?.randomUUID?.();
-  return `quiet-reader-${uuid ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
+  return `quiet-reader-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 export async function pickGoogleDriveItems(config: GoogleDriveConfig): Promise<PickerResult | null> {

@@ -107,25 +107,27 @@ function readStoredNotes(bookId: string): PageNote[] {
   try {
     const stored = window.localStorage.getItem(readingKey(bookId, 'notes'));
     const parsed = stored ? JSON.parse(stored) : [];
-    return Array.isArray(parsed) ? parsed.flatMap((note): PageNote[] => (
-      typeof note?.id === 'string'
-      && Number.isInteger(note?.page)
-      && typeof note?.text === 'string'
-      && typeof note?.createdAt === 'number'
-      && Number.isFinite(note.createdAt)
-      && (note.selectedText === undefined || typeof note.selectedText === 'string')
-        ? [{
-            createdAt: note.createdAt,
-            id: note.id,
-            page: note.page,
-            ...(note.selectedText === undefined ? {} : { selectedText: note.selectedText }),
-            text: note.text,
-            updatedAt: typeof note.updatedAt === 'number' && Number.isFinite(note.updatedAt)
-              ? note.updatedAt
-              : note.createdAt,
-          }]
-        : []
-    )) : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.reduce<PageNote[]>((notes, note) => {
+      if (typeof note?.id === 'string'
+        && Number.isInteger(note?.page)
+        && typeof note?.text === 'string'
+        && typeof note?.createdAt === 'number'
+        && Number.isFinite(note.createdAt)
+        && (note.selectedText === undefined || typeof note.selectedText === 'string')) {
+        notes.push({
+          createdAt: note.createdAt,
+          id: note.id,
+          page: note.page,
+          ...(note.selectedText === undefined ? {} : { selectedText: note.selectedText }),
+          text: note.text,
+          updatedAt: typeof note.updatedAt === 'number' && Number.isFinite(note.updatedAt)
+            ? note.updatedAt
+            : note.createdAt,
+        });
+      }
+      return notes;
+    }, []);
   } catch {
     return [];
   }
@@ -196,14 +198,17 @@ function getLocalSyncRecord(books: Book[]): ReaderSyncRecord {
     result[book.id] = getStoredReadingState(book.id);
     return result;
   }, {});
-  const latestReadingUpdate = Object.values(reading).reduce(
-    (latest, state) => Math.max(
+  const latestReadingUpdate = Object.keys(reading).reduce(
+    (latest, bookId) => {
+      const state = reading[bookId];
+      return Math.max(
       latest,
       state.lastPageUpdatedAt,
       state.bookmarkUpdatedAt,
       ...state.notes.map((note) => note.updatedAt),
       ...state.deletedNotes.map((note) => note.deletedAt),
-    ),
+      );
+    },
     0,
   );
   return {
@@ -851,7 +856,8 @@ export default function App() {
   const applySyncedRecord = useCallback((record: ReaderSyncRecord) => {
     const syncedBooks: Book[] = record.books.map((book) => ({ ...book, source: 'drive' }));
     window.localStorage.setItem(booksKey, JSON.stringify(syncedBooks));
-    Object.entries(record.reading).forEach(([bookId, state]) => {
+    Object.keys(record.reading).forEach((bookId) => {
+      const state = record.reading[bookId];
       window.localStorage.setItem(readingKey(bookId, 'last-page'), String(state.lastPage));
       window.localStorage.setItem(readingUpdatedKey(bookId, 'last-page'), String(state.lastPageUpdatedAt));
       window.localStorage.setItem(readingKey(bookId, 'bookmark'), String(state.bookmark));

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'quiet-reader-v2';
+const CACHE_NAME = 'quiet-reader-v3';
 const APP_SHELL = [
   './',
   './manifest.webmanifest',
