@@ -818,6 +818,9 @@ export default function App() {
   );
   const activeBookRef = useRef(activeBook);
   const booksRef = useRef(books);
+  const screenRef = useRef(screen);
+  const initialSyncCompleteRef = useRef(!isGoogleDriveConfigured);
+  const initialSyncPromiseRef = useRef<Promise<void> | null>(null);
   const startupAuthenticationStartedRef = useRef(false);
   const syncInFlightRef = useRef(false);
   const syncRequestedRef = useRef(false);
@@ -825,6 +828,7 @@ export default function App() {
 
   activeBookRef.current = activeBook;
   booksRef.current = books;
+  screenRef.current = screen;
 
   const applySyncedRecord = useCallback((record: ReaderSyncRecord) => {
     const syncedBooks: Book[] = record.books.map((book) => ({ ...book, source: 'drive' }));
@@ -841,12 +845,11 @@ export default function App() {
     setBooks([demoBook, ...syncedBooks]);
     const active = activeBookRef.current;
     const state = active.source === 'drive' ? record.reading[active.id] : undefined;
-    if (state) {
+    if (state && screenRef.current !== 'reader') {
       setPage(state.lastPage);
       setBookmark(state.bookmark);
       setNotes(state.notes);
       setNoteTombstones(state.deletedNotes);
-      setJumpRequest((current) => ({ id: current.id + 1, page: state.lastPage }));
     }
   }, []);
 
@@ -894,6 +897,19 @@ export default function App() {
     }
   }, [applySyncedRecord]);
 
+  const waitForInitialSync = useCallback(() => {
+    if (initialSyncCompleteRef.current) return Promise.resolve();
+    if (!initialSyncPromiseRef.current) {
+      const sync = syncReaderState();
+      initialSyncPromiseRef.current = sync;
+      void sync.then(() => {
+        initialSyncCompleteRef.current = true;
+        initialSyncPromiseRef.current = null;
+      });
+    }
+    return initialSyncPromiseRef.current;
+  }, [syncReaderState]);
+
   const scheduleSync = useCallback(() => {
     if (!isGoogleDriveConfigured) return;
     if (syncTimerRef.current !== null) window.clearTimeout(syncTimerRef.current);
@@ -910,8 +926,8 @@ export default function App() {
   useEffect(() => {
     if (!isGoogleDriveConfigured || startupAuthenticationStartedRef.current) return;
     startupAuthenticationStartedRef.current = true;
-    void syncReaderState();
-  }, [syncReaderState]);
+    void waitForInitialSync();
+  }, [waitForInitialSync]);
 
   useEffect(() => {
     if (!isGoogleDriveConfigured) return undefined;
@@ -1126,6 +1142,7 @@ export default function App() {
       setDrivePending(true);
       setLoadingBookId(book.id);
       setLoadingProgress(null);
+      await waitForInitialSync();
       const cachedPdf = await readCachedDrivePdf(book.driveFileId!).catch(() => null);
       if (cachedPdf) {
         openReader(book, cachedPdf);
