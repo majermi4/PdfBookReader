@@ -504,7 +504,7 @@ function Library({
         <span className="app-name">Quiet Reader</span>
       </header>
       <section className="library-content" aria-labelledby="library-title">
-        <h1 id="library-title">Your books</h1>
+        <h1 id="library-title">My books</h1>
         <p>Choose individual PDFs or a folder from Google Drive. The included demo is safe to explore.</p>
         <button className="drive-button" type="button" disabled={drivePending} onClick={onAddFromDrive}>
           {drivePending ? 'Opening Google Drive…' : 'Add from Google Drive'}
@@ -858,20 +858,20 @@ export default function App() {
 
   const notesOnPage = notes.filter((note) => note.page === page);
   const visibleContents = contents.filter((item) => item.title.toLowerCase().includes(tocQuery.trim().toLowerCase()));
-  const progress = bookmarkProgress(bookmark, pageCount);
+  const currentProgress = bookmarkProgress(page, pageCount);
 
   return (
     <main className="reader-page">
       {pageCount > 0 && (
         <div
-          aria-label={`Main bookmark progress: page ${bookmark} of ${pageCount}`}
+          aria-label={`Reading progress: page ${page} of ${pageCount}`}
           className="reader-bookmark-progress"
           role="progressbar"
           aria-valuemax={pageCount}
           aria-valuemin={1}
-          aria-valuenow={bookmark}
+          aria-valuenow={page}
         >
-          <span style={{ width: `${progress}%` }} />
+          <span style={{ width: `${currentProgress}%` }} />
         </div>
       )}
       {document ? (
