@@ -42,6 +42,7 @@ type PageNote = {
   page: number;
   text: string;
   createdAt: number;
+  selectedText?: string;
 };
 
 type ContentsItem = {
@@ -93,6 +94,7 @@ function readStoredNotes(bookId: string): PageNote[] {
       && Number.isInteger(note?.page)
       && typeof note?.text === 'string'
       && typeof note?.createdAt === 'number'
+      && (note.selectedText === undefined || typeof note.selectedText === 'string')
     )) : [];
   } catch {
     return [];
@@ -183,18 +185,21 @@ function PdfPage({
   renderWidth,
   searchQuery,
   onRenderError,
+  onTextSelected,
 }: {
   document: pdfjs.PDFDocumentProxy;
   pageNumber: number;
   renderWidth?: number;
   searchQuery: string;
   onRenderError: (message: string) => void;
+  onTextSelected: (page: number, text: string) => void;
 }) {
   const stageRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const activeTaskRef = useRef<pdfjs.RenderTask | null>(null);
   const renderVersionRef = useRef(0);
   const [highlights, setHighlights] = useState<HighlightBox[]>([]);
+  const [textLayer, setTextLayer] = useState<Array<{ fontSize: number; left: number; text: string; top: number; transform: string }>>([]);
 
   const render = useCallback(async () => {
     const stage = stageRef.current;
@@ -231,14 +236,27 @@ function PdfPage({
       await task.promise;
       if (renderVersion !== renderVersionRef.current) return;
 
+      const textContent = await page.getTextContent();
+      if (renderVersion !== renderVersionRef.current) return;
+      setTextLayer(textContent.items.flatMap((item) => {
+        if (!('str' in item) || typeof item.str !== 'string' || !item.str) return [];
+        const transform = pdfjs.Util.transform(viewport.transform, item.transform);
+        const fontSize = Math.hypot(transform[2], transform[3]);
+        return [{
+          fontSize,
+          left: transform[4],
+          text: item.str,
+          top: transform[5] - fontSize,
+          transform: `rotate(${Math.atan2(transform[1], transform[0])}rad)`,
+        }];
+      }));
+
       const query = searchQuery.trim().toLowerCase();
       if (!query) {
         setHighlights([]);
         return;
       }
 
-      const textContent = await page.getTextContent();
-      if (renderVersion !== renderVersionRef.current) return;
       const boxes: HighlightBox[] = [];
       for (const item of textContent.items) {
         if (!('str' in item) || typeof item.str !== 'string' || !item.str) continue;
@@ -263,6 +281,13 @@ function PdfPage({
       onRenderError(error instanceof Error ? error.message : 'Unable to render this PDF page.');
     }
   }, [document, onRenderError, pageNumber, renderWidth, searchQuery]);
+
+  const captureTextSelection = () => {
+    window.setTimeout(() => {
+      const text = window.getSelection()?.toString().replace(/\s+/g, ' ').trim();
+      if (text) onTextSelected(pageNumber, text);
+    }, 0);
+  };
 
   useEffect(() => {
     void render();
@@ -300,6 +325,21 @@ function PdfPage({
           ))}
         </div>
       )}
+      <div className="pdf-text-layer" onMouseUp={captureTextSelection} onTouchEnd={captureTextSelection}>
+        {textLayer.map((item, index) => (
+          <span
+            key={`${index}-${item.left}-${item.top}`}
+            style={{
+              fontSize: `${item.fontSize}px`,
+              left: `${item.left}px`,
+              top: `${item.top}px`,
+              transform: item.transform,
+            }}
+          >
+            {item.text}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
@@ -316,6 +356,7 @@ function ContinuousPdf({
   onPageChange,
   onReaderClick,
   onRenderError,
+  onTextSelected,
 }: {
   document: pdfjs.PDFDocumentProxy;
   pageCount: number;
@@ -328,6 +369,7 @@ function ContinuousPdf({
   onPageChange: (page: number) => void;
   onReaderClick: () => void;
   onRenderError: (message: string) => void;
+  onTextSelected: (page: number, text: string) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const restoredRef = useRef(false);
@@ -469,6 +511,7 @@ function ContinuousPdf({
               document={document}
               key={pageNumber}
               onRenderError={onRenderError}
+              onTextSelected={onTextSelected}
               pageNumber={pageNumber}
               renderWidth={pageWidth}
               searchQuery={searchQuery}
@@ -585,6 +628,7 @@ export default function App() {
   const [pdfSearchProgress, setPdfSearchProgress] = useState(0);
   const pdfSearchJobRef = useRef(0);
   const [noteDraft, setNoteDraft] = useState('');
+  const [selectedQuote, setSelectedQuote] = useState<{ page: number; text: string } | null>(null);
   const [fullWidth, setFullWidth] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [jumpRequest, setJumpRequest] = useState({ id: 0, page: 1 });
@@ -708,17 +752,25 @@ export default function App() {
     if (!text) return;
     setNotes((current) => [...current, {
       id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      page,
+      page: selectedQuote?.page ?? page,
       text,
       createdAt: Date.now(),
+      ...(selectedQuote ? { selectedText: selectedQuote.text } : {}),
     }]);
     setNoteDraft('');
+    setSelectedQuote(null);
+    window.getSelection()?.removeAllRanges();
     setNoteEditorOpen(false);
   };
 
   const deleteNote = (id: string) => {
     setNotes((current) => current.filter((note) => note.id !== id));
   };
+
+  const captureTextSelection = useCallback((selectedPage: number, text: string) => {
+    setSelectedQuote({ page: selectedPage, text });
+    setControlsVisible(true);
+  }, []);
 
   const clearPdfSearch = () => {
     setPdfQuery('');
@@ -734,6 +786,7 @@ export default function App() {
     setNotes(readStoredNotes(book.id));
     setPdfQuery('');
     setPdfSearchResults([]);
+    setSelectedQuote(null);
     setError(null);
     setScreen('reader');
   };
@@ -885,6 +938,7 @@ export default function App() {
           scrollRequest={scrollRequest}
           onPageChange={setPage}
           onReaderClick={() => {
+            if (window.getSelection()?.toString().trim()) return;
             if (controlsVisible) {
               setNoteEditorOpen(false);
               setBookmarkMenuOpen(false);
@@ -897,6 +951,7 @@ export default function App() {
             setControlsVisible((visible) => !visible);
           }}
           onRenderError={setError}
+          onTextSelected={captureTextSelection}
           pageCount={pageCount}
           searchQuery={pdfQuery.trim().length >= 2 ? pdfQuery : ''}
           zoom={zoom}
@@ -996,7 +1051,7 @@ export default function App() {
               setPdfSearchOpen(false);
               setNoteEditorOpen(true);
             }}>
-              Note{notesOnPage.length ? ` · ${notesOnPage.length}` : ''}
+              Note{selectedQuote ? ' · selection' : notesOnPage.length ? ` · ${notesOnPage.length}` : ''}
             </button>
             <button aria-expanded={viewSettingsOpen} type="button" onClick={() => {
               setNoteEditorOpen(false);
@@ -1151,19 +1206,32 @@ export default function App() {
       )}
 
       {noteEditorOpen && (
-        <section className="note-editor" aria-label={`Add note on PDF page ${page}`}>
+        <section className="note-editor" aria-label={`Add note on PDF page ${selectedQuote?.page ?? page}`}>
           <div className="note-editor-header">
-            <span>Note on PDF page {page}</span>
+            <span>Note on PDF page {selectedQuote?.page ?? page}</span>
             <button aria-label="Close note editor" type="button" onClick={() => setNoteEditorOpen(false)}>×</button>
           </div>
           {notesOnPage.length > 0 && (
             <div className="saved-notes" aria-label={`Notes on PDF page ${page}`}>
               {notesOnPage.map((note) => (
                 <article className="saved-note" key={note.id}>
+                  {note.selectedText && <blockquote>{note.selectedText}</blockquote>}
                   <p>{note.text}</p>
                   <button aria-label="Delete note" type="button" onClick={() => deleteNote(note.id)}>Delete</button>
                 </article>
               ))}
+            </div>
+          )}
+          {selectedQuote && (
+            <div className="selected-quote">
+              <div>
+                <span>Linked text</span>
+                <blockquote>{selectedQuote.text}</blockquote>
+              </div>
+              <button type="button" onClick={() => {
+                setSelectedQuote(null);
+                window.getSelection()?.removeAllRanges();
+              }}>Remove</button>
             </div>
           )}
           <textarea

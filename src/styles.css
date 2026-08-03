@@ -77,6 +77,12 @@ h1 { font-size: 34px; letter-spacing: -.055em; margin: 0; }
 
 .pdf-highlights span { background: rgb(255 214 71 / .52); border-radius: 2px; box-shadow: inset 0 -1px 0 rgb(162 102 0 / .5); mix-blend-mode: multiply; position: absolute; }
 
+.pdf-text-layer { inset: 0; position: absolute; user-select: text; }
+
+.pdf-text-layer span { color: transparent; cursor: text; line-height: 1; position: absolute; transform-origin: 0 0; white-space: pre; }
+
+.pdf-text-layer span::selection { background: rgb(121 193 139 / .5); }
+
 .reader-toolbar { align-items: center; backdrop-filter: blur(14px); background: rgb(22 26 22 / .94); border-bottom: 1px solid rgb(255 255 255 / .11); box-shadow: 0 6px 18px rgb(0 0 0 / .18); display: flex; gap: 16px; left: 0; padding: calc(18px + env(safe-area-inset-top)) clamp(18px, 5vw, 76px) 18px; position: absolute; right: 0; top: 0; z-index: 1; }
 
 .reader-toolbar button { background: transparent; border: 0; border-radius: 9px; color: #eff2ec; cursor: pointer; padding: 8px 10px; }
@@ -193,9 +199,19 @@ h1 { font-size: 34px; letter-spacing: -.055em; margin: 0; }
 
 .saved-note p { line-height: 1.35; margin: 0; }
 
+.saved-note blockquote, .selected-quote blockquote { border-left: 2px solid #91b69a; color: #536257; font-size: .9em; line-height: 1.35; margin: 0 0 8px; padding-left: 9px; }
+
 .saved-note button { background: transparent; border: 0; color: #607067; cursor: pointer; font: inherit; padding: 1px 0; text-decoration: underline; }
 
 .note-editor textarea { border: 1px solid #cbd1c9; border-radius: 9px; color: inherit; display: block; font: inherit; line-height: 1.45; min-height: 112px; padding: 10px 11px; resize: vertical; width: 100%; }
+
+.selected-quote { align-items: flex-start; background: #edf3ec; border-radius: 9px; display: flex; font-size: 14px; gap: 10px; justify-content: space-between; margin: 0 0 12px; padding: 10px; }
+
+.selected-quote span { color: #315f42; display: block; font-size: 12px; font-weight: 650; margin-bottom: 5px; }
+
+.selected-quote blockquote { margin-bottom: 0; }
+
+.selected-quote button { background: transparent; border: 0; color: #607067; cursor: pointer; font: inherit; padding: 1px 0; text-decoration: underline; }
 
 .note-editor textarea:focus { border-color: #315f42; outline: 2px solid rgb(49 95 66 / .18); }
 
