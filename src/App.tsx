@@ -757,13 +757,15 @@ export default function App() {
           jumpRequest={jumpRequest}
           onPageChange={setPage}
           onReaderClick={() => {
-            setNoteEditorOpen(false);
-            setViewSettingsOpen(false);
-            setContentsOpen(false);
-            setTocSearchOpen(false);
-            setTocQuery('');
-            setPdfSearchOpen(false);
-            setControlsVisible(false);
+            if (controlsVisible) {
+              setNoteEditorOpen(false);
+              setViewSettingsOpen(false);
+              setContentsOpen(false);
+              setTocSearchOpen(false);
+              setTocQuery('');
+              setPdfSearchOpen(false);
+            }
+            setControlsVisible((visible) => !visible);
           }}
           onRenderError={setError}
           pageCount={pageCount}
@@ -1018,17 +1020,6 @@ export default function App() {
             <button className="save-note" disabled={!noteDraft.trim()} type="button" onClick={saveNote}>Save note</button>
           </div>
         </section>
-      )}
-
-      {!controlsVisible && (
-        <button
-          className="reader-handle"
-          type="button"
-          aria-label="Show reader controls"
-          onClick={() => setControlsVisible(true)}
-        >
-          •••
-        </button>
       )}
 
       {error && <div className="reader-error">{error}</div>}
