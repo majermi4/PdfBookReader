@@ -528,10 +528,7 @@ function ContinuousPdf({
   const restoredRef = useRef(false);
   const lastJumpIdRef = useRef(0);
   const lastScrollRequestIdRef = useRef(0);
-  const pendingPageAlignmentRef = useRef<{ behavior: ScrollBehavior; page: number } | null>(null);
-  const pageAlignmentTimersRef = useRef<number[]>([]);
   const lastReportedPageRef = useRef(initialPage);
-  const currentPageRef = useRef(initialPage);
   const [containerWidth, setContainerWidth] = useState(0);
   const [pageAspect, setPageAspect] = useState(661.464 / 504);
   const [currentPage, setCurrentPage] = useState(initialPage);
@@ -564,11 +561,6 @@ function ContinuousPdf({
   const firstRendered = Math.max(1, currentPage - 3);
   const lastRendered = Math.min(pageCount, currentPage + 3);
 
-  const clearPageAlignmentTimers = useCallback(() => {
-    pageAlignmentTimersRef.current.forEach((timer) => window.clearTimeout(timer));
-    pageAlignmentTimersRef.current = [];
-  }, []);
-
   const alignRenderedPage = useCallback((page: number, behavior: ScrollBehavior) => {
     const scroll = scrollRef.current;
     if (!scroll) return false;
@@ -584,23 +576,10 @@ function ContinuousPdf({
   const scrollToPage = useCallback((page: number, behavior: ScrollBehavior) => {
     const scroll = scrollRef.current;
     if (!scroll) return;
-    clearPageAlignmentTimers();
-    pendingPageAlignmentRef.current = { behavior, page };
     if (!alignRenderedPage(page, behavior)) {
       scroll.scrollTo({ top: Math.max(0, page - 1) * pageUnit, behavior });
     }
-    [160, 520].forEach((delay) => {
-      const timer = window.setTimeout(() => {
-        const pending = pendingPageAlignmentRef.current;
-        if (!pending || pending.page !== page) return;
-        alignRenderedPage(page, 'auto');
-        if (delay === 520) pendingPageAlignmentRef.current = null;
-      }, delay);
-      pageAlignmentTimersRef.current.push(timer);
-    });
-  }, [alignRenderedPage, clearPageAlignmentTimers, pageUnit]);
-
-  useEffect(() => () => clearPageAlignmentTimers(), [clearPageAlignmentTimers]);
+  }, [alignRenderedPage, pageUnit]);
 
   useEffect(() => {
     if (!restoredRef.current && containerWidth) {
@@ -608,11 +587,6 @@ function ContinuousPdf({
       scrollToPage(initialPage, 'auto');
     }
   }, [containerWidth, initialPage, scrollToPage]);
-
-  useEffect(() => {
-    if (!restoredRef.current || !containerWidth) return;
-    scrollToPage(currentPageRef.current, 'auto');
-  }, [containerWidth, pageUnit, scrollToPage]);
 
   useEffect(() => {
     if (!containerWidth || jumpRequest.id === 0 || jumpRequest.id === lastJumpIdRef.current) return;
@@ -639,7 +613,6 @@ function ContinuousPdf({
     );
     if (visiblePage !== lastReportedPageRef.current) {
       lastReportedPageRef.current = visiblePage;
-      currentPageRef.current = visiblePage;
       setCurrentPage(visiblePage);
       onPageChange(visiblePage);
     }
