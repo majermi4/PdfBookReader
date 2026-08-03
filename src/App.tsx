@@ -366,7 +366,10 @@ function ContinuousPdf({
     const renderedPage = scroll.querySelector<HTMLElement>(`[data-pdf-page="${page}"]`);
     if (renderedPage) {
       pendingPageAlignmentRef.current = null;
-      scroll.scrollTo({ top: renderedPage.offsetTop, behavior });
+      const top = scroll.scrollTop
+        + renderedPage.getBoundingClientRect().top
+        - scroll.getBoundingClientRect().top;
+      scroll.scrollTo({ top, behavior });
       return;
     }
     pendingPageAlignmentRef.current = { behavior, page };
@@ -380,7 +383,10 @@ function ContinuousPdf({
     const renderedPage = scroll.querySelector<HTMLElement>(`[data-pdf-page="${pending.page}"]`);
     if (!renderedPage) return;
     pendingPageAlignmentRef.current = null;
-    scroll.scrollTo({ top: renderedPage.offsetTop, behavior: pending.behavior });
+    const top = scroll.scrollTop
+      + renderedPage.getBoundingClientRect().top
+      - scroll.getBoundingClientRect().top;
+    scroll.scrollTo({ top, behavior: pending.behavior });
   }, [currentPage, firstRendered, lastRendered, pageWidth]);
 
   useEffect(() => {
