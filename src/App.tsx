@@ -23,6 +23,7 @@ type Book = {
   title: string;
   subtitle: string;
   driveFileId?: string;
+  pageCount?: number;
 };
 
 const demoBook: Book = {
@@ -30,6 +31,7 @@ const demoBook: Book = {
   source: 'demo',
   subtitle: 'Quiet Reader · Demo PDF',
   title: 'A Short Guide to Quiet Reading',
+  pageCount: 7,
 };
 
 const booksKey = 'quiet-reader:books';
@@ -77,6 +79,11 @@ function readStoredPage(bookId: string, name: string, fallback: number) {
   return Number.isInteger(stored) && stored > 0 ? stored : fallback;
 }
 
+function bookmarkProgress(bookmark: number, pageCount?: number) {
+  if (!pageCount) return 0;
+  return Math.min(100, Math.max(0, (bookmark / pageCount) * 100));
+}
+
 function readStoredNotes(bookId: string): PageNote[] {
   try {
     const stored = window.localStorage.getItem(readingKey(bookId, 'notes'));
@@ -103,6 +110,7 @@ function readStoredBooks(): Book[] {
       && typeof book.driveFileId === 'string'
       && typeof book.title === 'string'
       && typeof book.subtitle === 'string'
+      && (book.pageCount === undefined || (Number.isInteger(book.pageCount) && book.pageCount > 0))
     ));
     return [demoBook, ...driveBooks];
   } catch {
@@ -502,6 +510,7 @@ function Library({
           {books.map((book) => {
             const bookmark = readStoredPage(book.id, 'bookmark', 1);
             const lastPage = readStoredPage(book.id, 'last-page', 1);
+            const progress = bookmarkProgress(bookmark, book.pageCount);
             return (
               <button className="book-row" key={book.id} type="button" onClick={() => onOpen(book)}>
                 {book.source === 'demo' ? (
@@ -514,8 +523,11 @@ function Library({
                   <span className="book-meta">{book.subtitle}</span>
                 </span>
                 <span className="book-progress">
-                  <strong>Main bookmark · p. {bookmark}</strong>
+                  <strong>{book.pageCount ? `Main bookmark · ${bookmark} / ${book.pageCount}` : `Main bookmark · p. ${bookmark}`}</strong>
                   Last viewed · PDF page {lastPage}
+                  <span className="book-progress-meter" aria-hidden="true">
+                    <span style={{ width: `${progress}%` }} />
+                  </span>
                 </span>
               </button>
             );
@@ -576,6 +588,11 @@ export default function App() {
         if (cancelled) return;
         setDocument(loadedDocument);
         setPageCount(loadedDocument.numPages);
+        setBooks((current) => current.map((book) => (
+          book.id === activeBook.id && book.pageCount !== loadedDocument.numPages
+            ? { ...book, pageCount: loadedDocument.numPages }
+            : book
+        )));
         setPage((current) => Math.min(current, loadedDocument.numPages));
         setBookmark((current) => Math.min(current, loadedDocument.numPages));
       })
@@ -813,9 +830,22 @@ export default function App() {
 
   const notesOnPage = notes.filter((note) => note.page === page);
   const visibleContents = contents.filter((item) => item.title.toLowerCase().includes(tocQuery.trim().toLowerCase()));
+  const progress = bookmarkProgress(bookmark, pageCount);
 
   return (
     <main className="reader-page">
+      {pageCount > 0 && (
+        <div
+          aria-label={`Main bookmark progress: page ${bookmark} of ${pageCount}`}
+          className="reader-bookmark-progress"
+          role="progressbar"
+          aria-valuemax={pageCount}
+          aria-valuemin={1}
+          aria-valuenow={bookmark}
+        >
+          <span style={{ width: `${progress}%` }} />
+        </div>
+      )}
       {document ? (
         <ContinuousPdf
           document={document}
