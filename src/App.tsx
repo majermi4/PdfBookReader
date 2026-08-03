@@ -326,6 +326,7 @@ function ContinuousPdf({
   const lastJumpIdRef = useRef(0);
   const lastScrollRequestIdRef = useRef(0);
   const pendingPageAlignmentRef = useRef<{ behavior: ScrollBehavior; page: number } | null>(null);
+  const pageAlignmentTimersRef = useRef<number[]>([]);
   const lastReportedPageRef = useRef(initialPage);
   const currentPageRef = useRef(initialPage);
   const [containerWidth, setContainerWidth] = useState(0);
@@ -360,34 +361,43 @@ function ContinuousPdf({
   const firstRendered = Math.max(1, currentPage - 3);
   const lastRendered = Math.min(pageCount, currentPage + 3);
 
-  const scrollToPage = useCallback((page: number, behavior: ScrollBehavior) => {
-    const scroll = scrollRef.current;
-    if (!scroll) return;
-    const renderedPage = scroll.querySelector<HTMLElement>(`[data-pdf-page="${page}"]`);
-    if (renderedPage) {
-      pendingPageAlignmentRef.current = null;
-      const top = scroll.scrollTop
-        + renderedPage.getBoundingClientRect().top
-        - scroll.getBoundingClientRect().top;
-      scroll.scrollTo({ top, behavior });
-      return;
-    }
-    pendingPageAlignmentRef.current = { behavior, page };
-    scroll.scrollTo({ top: Math.max(0, page - 1) * pageUnit, behavior });
-  }, [pageUnit]);
+  const clearPageAlignmentTimers = useCallback(() => {
+    pageAlignmentTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    pageAlignmentTimersRef.current = [];
+  }, []);
 
-  useEffect(() => {
-    const pending = pendingPageAlignmentRef.current;
+  const alignRenderedPage = useCallback((page: number, behavior: ScrollBehavior) => {
     const scroll = scrollRef.current;
-    if (!pending || !scroll) return;
-    const renderedPage = scroll.querySelector<HTMLElement>(`[data-pdf-page="${pending.page}"]`);
-    if (!renderedPage) return;
-    pendingPageAlignmentRef.current = null;
+    if (!scroll) return false;
+    const renderedPage = scroll.querySelector<HTMLElement>(`[data-pdf-page="${page}"]`);
+    if (!renderedPage) return false;
     const top = scroll.scrollTop
       + renderedPage.getBoundingClientRect().top
       - scroll.getBoundingClientRect().top;
-    scroll.scrollTo({ top, behavior: pending.behavior });
-  }, [currentPage, firstRendered, lastRendered, pageWidth]);
+    scroll.scrollTo({ top, behavior });
+    return true;
+  }, []);
+
+  const scrollToPage = useCallback((page: number, behavior: ScrollBehavior) => {
+    const scroll = scrollRef.current;
+    if (!scroll) return;
+    clearPageAlignmentTimers();
+    pendingPageAlignmentRef.current = { behavior, page };
+    if (!alignRenderedPage(page, behavior)) {
+      scroll.scrollTo({ top: Math.max(0, page - 1) * pageUnit, behavior });
+    }
+    [160, 520].forEach((delay) => {
+      const timer = window.setTimeout(() => {
+        const pending = pendingPageAlignmentRef.current;
+        if (!pending || pending.page !== page) return;
+        alignRenderedPage(page, 'auto');
+        if (delay === 520) pendingPageAlignmentRef.current = null;
+      }, delay);
+      pageAlignmentTimersRef.current.push(timer);
+    });
+  }, [alignRenderedPage, clearPageAlignmentTimers, pageUnit]);
+
+  useEffect(() => () => clearPageAlignmentTimers(), [clearPageAlignmentTimers]);
 
   useEffect(() => {
     if (!restoredRef.current && containerWidth) {
