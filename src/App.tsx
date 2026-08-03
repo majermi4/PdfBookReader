@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import './pdfjs-compat';
 import * as pdfjs from 'pdfjs-dist';
+import pdfWorkerSrc from './pdfjs-worker.ts?worker&url';
 import { cacheDrivePdf, readCachedDrivePdf } from './drive-cache';
 import {
   DriveAppDataConflictError,
@@ -25,10 +27,7 @@ import {
   type SyncedReadingState,
 } from './reader-sync';
 
-pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  'pdfjs-dist/build/pdf.worker.min.mjs',
-  import.meta.url,
-).toString();
+pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
 
 type Book = {
   id: string;
@@ -305,6 +304,7 @@ function PdfPage({
   const [textLayer, setTextLayer] = useState<Array<{ fontSize: number; height: number; left: number; text: string; top: number; transform: string; width: number }>>([]);
 
   const render = useCallback(async () => {
+    let renderStage = 'loading the PDF page';
     const stage = stageRef.current;
     const canvas = canvasRef.current;
     if (!stage || !canvas) return;
@@ -314,6 +314,7 @@ function PdfPage({
     try {
       const page = await document.getPage(pageNumber);
       if (renderVersion !== renderVersionRef.current) return;
+      renderStage = 'preparing the canvas';
       const naturalViewport = page.getViewport({ scale: 1 });
       const scale = renderWidth
         ? renderWidth / naturalViewport.width
@@ -334,13 +335,16 @@ function PdfPage({
       context.fillStyle = '#ffffff';
       context.fillRect(0, 0, viewport.width, viewport.height);
 
+      renderStage = 'painting the PDF page';
       const task = page.render({ canvas, canvasContext: context, viewport });
       activeTaskRef.current = task;
       await task.promise;
       if (renderVersion !== renderVersionRef.current) return;
 
+      renderStage = 'reading the PDF text layer';
       const textContent = await page.getTextContent();
       if (renderVersion !== renderVersionRef.current) return;
+      renderStage = 'building selectable text';
       setTextLayer(textContent.items.flatMap((item) => {
         if (!('str' in item) || typeof item.str !== 'string' || !item.str) return [];
         const transform = pdfjs.Util.transform(viewport.transform, item.transform);
@@ -383,7 +387,8 @@ function PdfPage({
       setHighlights(boxes);
     } catch (error) {
       if (renderVersion !== renderVersionRef.current || isExpectedPdfCancellation(error)) return;
-      onRenderError(error instanceof Error ? error.message : 'Unable to render this PDF page.');
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      onRenderError(`PDF page ${pageNumber} failed while ${renderStage}: ${message}`);
     }
   }, [document, onRenderError, pageNumber, renderWidth, searchQuery]);
 
