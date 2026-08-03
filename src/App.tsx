@@ -300,6 +300,7 @@ function ContinuousPdf({
   pageCount,
   initialPage,
   jumpRequest,
+  scrollRequest,
   fullWidth,
   zoom,
   searchQuery,
@@ -311,6 +312,7 @@ function ContinuousPdf({
   pageCount: number;
   initialPage: number;
   jumpRequest: { id: number; page: number };
+  scrollRequest: { id: number; direction: -1 | 1 };
   fullWidth: boolean;
   zoom: number;
   searchQuery: string;
@@ -321,6 +323,7 @@ function ContinuousPdf({
   const scrollRef = useRef<HTMLDivElement>(null);
   const restoredRef = useRef(false);
   const lastJumpIdRef = useRef(0);
+  const lastScrollRequestIdRef = useRef(0);
   const lastReportedPageRef = useRef(initialPage);
   const currentPageRef = useRef(initialPage);
   const [containerWidth, setContainerWidth] = useState(0);
@@ -378,6 +381,16 @@ function ContinuousPdf({
     lastJumpIdRef.current = jumpRequest.id;
     scrollToPage(jumpRequest.page, 'smooth');
   }, [containerWidth, jumpRequest, scrollToPage]);
+
+  useEffect(() => {
+    const scroll = scrollRef.current;
+    if (!scroll || scrollRequest.id === 0 || scrollRequest.id === lastScrollRequestIdRef.current) return;
+    lastScrollRequestIdRef.current = scrollRequest.id;
+    scroll.scrollBy({
+      top: scrollRequest.direction * Math.max(240, Math.round(scroll.clientHeight * .78)),
+      behavior: 'smooth',
+    });
+  }, [scrollRequest]);
 
   const onScroll = () => {
     const scroll = scrollRef.current;
@@ -508,6 +521,7 @@ export default function App() {
   const [fullWidth, setFullWidth] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [jumpRequest, setJumpRequest] = useState({ id: 0, page: 1 });
+  const [scrollRequest, setScrollRequest] = useState<{ id: number; direction: -1 | 1 }>({ id: 0, direction: 1 });
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -726,6 +740,9 @@ export default function App() {
   useEffect(() => {
     if (screen !== 'reader') return;
     const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return;
+
       if (event.key === 'Escape') {
         setNoteEditorOpen(false);
         setViewSettingsOpen(false);
@@ -734,11 +751,26 @@ export default function App() {
         setTocQuery('');
         setPdfSearchOpen(false);
         setControlsVisible(false);
+        return;
+      }
+
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        event.preventDefault();
+        jumpToPage(page + (event.key === 'ArrowRight' ? 1 : -1));
+        return;
+      }
+
+      if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+        event.preventDefault();
+        setScrollRequest((current) => ({
+          id: current.id + 1,
+          direction: event.key === 'ArrowDown' ? 1 : -1,
+        }));
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [screen]);
+  }, [jumpToPage, page, screen]);
 
   if (screen === 'library') {
     return <Library books={books} driveMessage={driveMessage} drivePending={drivePending} onAddFromDrive={addFromGoogleDrive} onOpen={openBook} />;
@@ -755,6 +787,7 @@ export default function App() {
           fullWidth={fullWidth}
           initialPage={page}
           jumpRequest={jumpRequest}
+          scrollRequest={scrollRequest}
           onPageChange={setPage}
           onReaderClick={() => {
             if (controlsVisible) {
