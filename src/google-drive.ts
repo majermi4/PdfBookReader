@@ -22,6 +22,8 @@ type TokenResponse = {
 };
 
 const DRIVE_FILE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+const DRIVE_APPDATA_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
+const DRIVE_SCOPES = [DRIVE_FILE_SCOPE, DRIVE_APPDATA_SCOPE].join(' ');
 const FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder';
 const GOOGLE_API_SCRIPT = 'https://apis.google.com/js/api.js';
 const GOOGLE_IDENTITY_SCRIPT = 'https://accounts.google.com/gsi/client';
@@ -110,7 +112,7 @@ function requestAccessToken(clientId: string) {
         finish(() => resolve(token));
       },
       client_id: clientId,
-      scope: DRIVE_FILE_SCOPE,
+      scope: DRIVE_SCOPES,
     });
     if (!client) {
       finish(() => reject(new Error('Google Drive sign-in is unavailable. Please try again.')));
@@ -135,6 +137,19 @@ export const isGoogleDriveConfigured = Boolean(
 export async function requestGoogleDriveAccess(config: GoogleDriveConfig) {
   await ensureGooglePicker();
   return requestAccessToken(config.clientId);
+}
+
+export type DriveAppDataFile<T> = {
+  data: T | null;
+  eTag: string | null;
+  fileId: string | null;
+};
+
+export class DriveAppDataConflictError extends Error {
+  constructor() {
+    super('Reading state changed on another device. Retrying the sync.');
+    this.name = 'DriveAppDataConflictError';
+  }
 }
 
 export async function pickGoogleDriveItems(config: GoogleDriveConfig): Promise<PickerResult | null> {
@@ -179,6 +194,75 @@ async function driveFetch(path: string, accessToken: string) {
     throw new Error(`Google Drive could not open this selection (${response.status}). ${detail}`);
   }
   return response;
+}
+
+export async function readDriveAppDataJson<T>(
+  name: string,
+  accessToken: string,
+): Promise<DriveAppDataFile<T>> {
+  const query = `name='${name.replace(/'/g, "\\'")}'`;
+  const listing = await driveFetch(
+    `files?spaces=appDataFolder&q=${encodeURIComponent(query)}&fields=${encodeURIComponent('files(id,name)')}&pageSize=1`,
+    accessToken,
+  );
+  const result = await listing.json() as { files?: Array<{ id?: string }> };
+  const fileId = result.files?.[0]?.id;
+  if (!fileId) return { data: null, eTag: null, fileId: null };
+
+  const content = await driveFetch(`files/${encodeURIComponent(fileId)}?alt=media`, accessToken);
+  let data: T;
+  try {
+    data = await content.json() as T;
+  } catch {
+    throw new Error('The saved Quiet Reader sync data is not valid JSON.');
+  }
+  return { data, eTag: content.headers.get('etag'), fileId };
+}
+
+export async function writeDriveAppDataJson<T>(
+  name: string,
+  data: T,
+  accessToken: string,
+  existing?: Pick<DriveAppDataFile<unknown>, 'eTag' | 'fileId'>,
+): Promise<Pick<DriveAppDataFile<T>, 'eTag' | 'fileId'>> {
+  const boundary = `quiet-reader-${crypto.randomUUID()}`;
+  const metadata = JSON.stringify({
+    mimeType: 'application/json',
+    name,
+    parents: existing?.fileId ? undefined : ['appDataFolder'],
+  });
+  const body = [
+    `--${boundary}`,
+    'Content-Type: application/json; charset=UTF-8',
+    '',
+    metadata,
+    `--${boundary}`,
+    'Content-Type: application/json',
+    '',
+    JSON.stringify(data),
+    `--${boundary}--`,
+    '',
+  ].join('\r\n');
+  const path = existing?.fileId
+    ? `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(existing.fileId)}?uploadType=multipart`
+    : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
+  const response = await fetch(path, {
+    method: existing?.fileId ? 'PATCH' : 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': `multipart/related; boundary=${boundary}`,
+      ...(existing?.eTag ? { 'If-Match': existing.eTag } : {}),
+    },
+    body,
+  });
+  if (response.status === 412) throw new DriveAppDataConflictError();
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Google Drive could not save reading state (${response.status}). ${detail}`);
+  }
+  const saved = await response.json() as { id?: string };
+  if (!saved.id) throw new Error('Google Drive did not return an ID for the saved reading state.');
+  return { eTag: response.headers.get('etag'), fileId: saved.id };
 }
 
 export async function listFolderPdfs(folderId: string, accessToken: string): Promise<DrivePickerItem[]> {

@@ -19,10 +19,9 @@ Open the local URL printed by Vite. Select the supplied sample book in the Libra
 - An on-demand control tray, including a full-width mode and zoom from 70% to 200%.
 - Automatic last-viewed page saved in browser local storage.
 - One manual main bookmark saved separately in browser local storage.
+- Google Drive App Data sync for selected Drive books, reading position, bookmark, and notes.
 
-## Not implemented yet
-
-- Cross-device sync.
+When its Google Drive configuration is supplied, the app requests Google login when it opens. The same grant is reused for Google Drive sync and the book picker, so choosing a book does not require separate consent.
 
 ## Google Drive
 

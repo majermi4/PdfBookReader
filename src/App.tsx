@@ -2,15 +2,28 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as pdfjs from 'pdfjs-dist';
 import { cacheDrivePdf, readCachedDrivePdf } from './drive-cache';
 import {
+  DriveAppDataConflictError,
   downloadGoogleDrivePdf,
   googleDriveConfig,
   isDriveFolder,
   isGoogleDriveConfigured,
   listFolderPdfs,
   pickGoogleDriveItems,
+  readDriveAppDataJson,
   requestGoogleDriveAccess,
   type DrivePickerItem,
+  writeDriveAppDataJson,
 } from './google-drive';
+import {
+  emptyReaderSyncRecord,
+  mergeReaderSyncRecords,
+  parseReaderSyncRecord,
+  type DeletedNote,
+  type ReaderSyncRecord,
+  type SyncedBook,
+  type SyncedNote,
+  type SyncedReadingState,
+} from './reader-sync';
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -36,14 +49,11 @@ const demoBook: Book = {
 
 const booksKey = 'quiet-reader:books';
 const readingKey = (bookId: string, name: string) => `quiet-reader:${bookId}:${name}`;
+const readingUpdatedKey = (bookId: string, name: string) => `quiet-reader:${bookId}:${name}:updated-at`;
+const deletedNotesKey = (bookId: string) => `quiet-reader:${bookId}:deleted-notes`;
+const appDataFileName = 'quiet-reader-reading-state.json';
 
-type PageNote = {
-  id: string;
-  page: number;
-  text: string;
-  createdAt: number;
-  selectedText?: string;
-};
+type PageNote = SyncedNote;
 
 type ContentsItem = {
   title: string;
@@ -83,6 +93,11 @@ function readStoredPage(bookId: string, name: string, fallback: number) {
   return Number.isInteger(stored) && stored > 0 ? stored : fallback;
 }
 
+function readStoredUpdatedAt(bookId: string, name: string) {
+  const stored = Number(window.localStorage.getItem(readingUpdatedKey(bookId, name)));
+  return Number.isFinite(stored) && stored >= 0 ? stored : 0;
+}
+
 function bookmarkProgress(bookmark: number, pageCount?: number) {
   if (!pageCount) return 0;
   return Math.min(100, Math.max(0, (bookmark / pageCount) * 100));
@@ -92,16 +107,46 @@ function readStoredNotes(bookId: string): PageNote[] {
   try {
     const stored = window.localStorage.getItem(readingKey(bookId, 'notes'));
     const parsed = stored ? JSON.parse(stored) : [];
-    return Array.isArray(parsed) ? parsed.filter((note): note is PageNote => (
+    return Array.isArray(parsed) ? parsed.flatMap((note): PageNote[] => (
       typeof note?.id === 'string'
       && Number.isInteger(note?.page)
       && typeof note?.text === 'string'
       && typeof note?.createdAt === 'number'
+      && Number.isFinite(note.createdAt)
       && (note.selectedText === undefined || typeof note.selectedText === 'string')
+        ? [{
+            createdAt: note.createdAt,
+            id: note.id,
+            page: note.page,
+            ...(note.selectedText === undefined ? {} : { selectedText: note.selectedText }),
+            text: note.text,
+            updatedAt: typeof note.updatedAt === 'number' && Number.isFinite(note.updatedAt)
+              ? note.updatedAt
+              : note.createdAt,
+          }]
+        : []
     )) : [];
   } catch {
     return [];
   }
+}
+
+function readDeletedNotes(bookId: string): DeletedNote[] {
+  try {
+    const stored = window.localStorage.getItem(deletedNotesKey(bookId));
+    const parsed = stored ? JSON.parse(stored) : [];
+    return Array.isArray(parsed) ? parsed.filter((note): note is DeletedNote => (
+      typeof note?.id === 'string'
+      && typeof note?.deletedAt === 'number'
+      && Number.isFinite(note.deletedAt)
+    )) : [];
+  } catch {
+    return [];
+  }
+}
+
+function sameJson(left: unknown, right: unknown) {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function readStoredBooks(): Book[] {
@@ -121,6 +166,52 @@ function readStoredBooks(): Book[] {
   } catch {
     return [demoBook];
   }
+}
+
+function toSyncedBook(book: Book): SyncedBook | null {
+  if (book.source !== 'drive' || !book.driveFileId) return null;
+  return {
+    driveFileId: book.driveFileId,
+    id: book.id,
+    ...(book.pageCount ? { pageCount: book.pageCount } : {}),
+    subtitle: book.subtitle,
+    title: book.title,
+  };
+}
+
+function getStoredReadingState(bookId: string): SyncedReadingState {
+  return {
+    bookmark: readStoredPage(bookId, 'bookmark', 1),
+    bookmarkUpdatedAt: readStoredUpdatedAt(bookId, 'bookmark'),
+    deletedNotes: readDeletedNotes(bookId),
+    lastPage: readStoredPage(bookId, 'last-page', 1),
+    lastPageUpdatedAt: readStoredUpdatedAt(bookId, 'last-page'),
+    notes: readStoredNotes(bookId),
+  };
+}
+
+function getLocalSyncRecord(books: Book[]): ReaderSyncRecord {
+  const syncedBooks = books.map(toSyncedBook).filter((book): book is SyncedBook => Boolean(book));
+  const reading = syncedBooks.reduce<Record<string, SyncedReadingState>>((result, book) => {
+    result[book.id] = getStoredReadingState(book.id);
+    return result;
+  }, {});
+  const latestReadingUpdate = Object.values(reading).reduce(
+    (latest, state) => Math.max(
+      latest,
+      state.lastPageUpdatedAt,
+      state.bookmarkUpdatedAt,
+      ...state.notes.map((note) => note.updatedAt),
+      ...state.deletedNotes.map((note) => note.deletedAt),
+    ),
+    0,
+  );
+  return {
+    books: syncedBooks,
+    reading,
+    schemaVersion: 1,
+    updatedAt: latestReadingUpdate,
+  };
 }
 
 async function resolveOutlinePage(document: pdfjs.PDFDocumentProxy, destination: string | unknown[] | null) {
@@ -591,6 +682,8 @@ function Library({
   loadingProgress,
   onAddFromDrive,
   onOpen,
+  onRetrySync,
+  syncStatus,
 }: {
   books: Book[];
   driveMessage: string | null;
@@ -599,6 +692,8 @@ function Library({
   loadingProgress: number | null;
   onAddFromDrive: () => void;
   onOpen: (book: Book) => void;
+  onRetrySync: () => void;
+  syncStatus: 'connecting' | 'needs-sign-in' | 'not-configured' | 'synced';
 }) {
   const [notesOpen, setNotesOpen] = useState(false);
   const allNotes = books.flatMap((book) => readStoredNotes(book.id).map((note) => ({ book, note })));
@@ -624,6 +719,18 @@ function Library({
       <section className="library-content" aria-labelledby="library-title">
         <h1 id="library-title">My books</h1>
         <p>Choose individual PDFs or a folder from Google Drive. The included demo is safe to explore.</p>
+        {syncStatus !== 'not-configured' && (
+          <p className="sync-status" role="status">
+            {syncStatus === 'synced' ? 'Reading progress syncs privately with Google Drive.' : null}
+            {syncStatus === 'connecting' ? 'Connecting to Google Drive…' : null}
+            {syncStatus === 'needs-sign-in' && (
+              <>
+                Sign in to Google Drive to sync your reading progress.
+                <button type="button" onClick={onRetrySync}>Sign in</button>
+              </>
+            )}
+          </p>
+        )}
         <button className="drive-button" type="button" disabled={drivePending} onClick={onAddFromDrive}>
           {drivePending ? 'Opening Google Drive…' : 'Add from Google Drive'}
         </button>
@@ -704,6 +811,7 @@ export default function App() {
   const [page, setPage] = useState(() => readStoredPage(demoBook.id, 'last-page', 1));
   const [bookmark, setBookmark] = useState(() => readStoredPage(demoBook.id, 'bookmark', 1));
   const [notes, setNotes] = useState<PageNote[]>(() => readStoredNotes(demoBook.id));
+  const [noteTombstones, setNoteTombstones] = useState<DeletedNote[]>(() => readDeletedNotes(demoBook.id));
   const [controlsVisible, setControlsVisible] = useState(false);
   const [bookmarkMenuOpen, setBookmarkMenuOpen] = useState(false);
   const [noteEditorOpen, setNoteEditorOpen] = useState(false);
@@ -727,10 +835,122 @@ export default function App() {
   const [jumpRequest, setJumpRequest] = useState({ id: 0, page: 1 });
   const [scrollRequest, setScrollRequest] = useState<{ id: number; direction: -1 | 1 }>({ id: 0, direction: 1 });
   const [error, setError] = useState<string | null>(null);
+  const [syncStatus, setSyncStatus] = useState<'connecting' | 'needs-sign-in' | 'not-configured' | 'synced'>(
+    isGoogleDriveConfigured ? 'connecting' : 'not-configured',
+  );
+  const activeBookRef = useRef(activeBook);
+  const booksRef = useRef(books);
+  const startupAuthenticationStartedRef = useRef(false);
+  const syncInFlightRef = useRef(false);
+  const syncRequestedRef = useRef(false);
+  const syncTimerRef = useRef<number | null>(null);
+
+  activeBookRef.current = activeBook;
+  booksRef.current = books;
+
+  const applySyncedRecord = useCallback((record: ReaderSyncRecord) => {
+    const syncedBooks: Book[] = record.books.map((book) => ({ ...book, source: 'drive' }));
+    window.localStorage.setItem(booksKey, JSON.stringify(syncedBooks));
+    Object.entries(record.reading).forEach(([bookId, state]) => {
+      window.localStorage.setItem(readingKey(bookId, 'last-page'), String(state.lastPage));
+      window.localStorage.setItem(readingUpdatedKey(bookId, 'last-page'), String(state.lastPageUpdatedAt));
+      window.localStorage.setItem(readingKey(bookId, 'bookmark'), String(state.bookmark));
+      window.localStorage.setItem(readingUpdatedKey(bookId, 'bookmark'), String(state.bookmarkUpdatedAt));
+      window.localStorage.setItem(readingKey(bookId, 'notes'), JSON.stringify(state.notes));
+      window.localStorage.setItem(deletedNotesKey(bookId), JSON.stringify(state.deletedNotes));
+    });
+    setBooks([demoBook, ...syncedBooks]);
+    const active = activeBookRef.current;
+    const state = active.source === 'drive' ? record.reading[active.id] : undefined;
+    if (state) {
+      setPage(state.lastPage);
+      setBookmark(state.bookmark);
+      setNotes(state.notes);
+      setNoteTombstones(state.deletedNotes);
+      setJumpRequest((current) => ({ id: current.id + 1, page: state.lastPage }));
+    }
+  }, []);
+
+  const syncReaderState = useCallback(async () => {
+    if (!isGoogleDriveConfigured) {
+      setSyncStatus('not-configured');
+      return;
+    }
+    if (syncInFlightRef.current) {
+      syncRequestedRef.current = true;
+      return;
+    }
+    syncInFlightRef.current = true;
+    setSyncStatus('connecting');
+    try {
+      const accessToken = await requestGoogleDriveAccess(googleDriveConfig);
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const saved = await readDriveAppDataJson<unknown>(appDataFileName, accessToken);
+        const remote = saved.data === null ? emptyReaderSyncRecord() : parseReaderSyncRecord(saved.data);
+        if (!remote) throw new Error('The saved Quiet Reader sync data has an unsupported format.');
+        const merged = mergeReaderSyncRecords(getLocalSyncRecord(booksRef.current), remote);
+        if (!merged.books.length && !Object.keys(merged.reading).length) {
+          applySyncedRecord(merged);
+          break;
+        }
+        try {
+          await writeDriveAppDataJson(appDataFileName, merged, accessToken, saved);
+          applySyncedRecord(merged);
+          break;
+        } catch (syncError) {
+          if (syncError instanceof DriveAppDataConflictError && attempt < 2) continue;
+          throw syncError;
+        }
+      }
+      setSyncStatus('synced');
+    } catch (syncError) {
+      setSyncStatus('needs-sign-in');
+      setDriveMessage(syncError instanceof Error ? syncError.message : 'Unable to connect to Google Drive for sync.');
+    } finally {
+      syncInFlightRef.current = false;
+      if (syncRequestedRef.current) {
+        syncRequestedRef.current = false;
+        void syncReaderState();
+      }
+    }
+  }, [applySyncedRecord]);
+
+  const scheduleSync = useCallback(() => {
+    if (!isGoogleDriveConfigured) return;
+    if (syncTimerRef.current !== null) window.clearTimeout(syncTimerRef.current);
+    syncTimerRef.current = window.setTimeout(() => {
+      syncTimerRef.current = null;
+      void syncReaderState();
+    }, 650);
+  }, [syncReaderState]);
+
+  useEffect(() => () => {
+    if (syncTimerRef.current !== null) window.clearTimeout(syncTimerRef.current);
+  }, []);
 
   useEffect(() => {
-    window.localStorage.setItem(booksKey, JSON.stringify(books.filter((book) => book.source === 'drive')));
-  }, [books]);
+    if (!isGoogleDriveConfigured || startupAuthenticationStartedRef.current) return;
+    startupAuthenticationStartedRef.current = true;
+    void syncReaderState();
+  }, [syncReaderState]);
+
+  useEffect(() => {
+    if (!isGoogleDriveConfigured) return undefined;
+    const syncOnResume = () => { void syncReaderState(); };
+    window.addEventListener('focus', syncOnResume);
+    window.addEventListener('online', syncOnResume);
+    return () => {
+      window.removeEventListener('focus', syncOnResume);
+      window.removeEventListener('online', syncOnResume);
+    };
+  }, [syncReaderState]);
+
+  useEffect(() => {
+    const nextBooks = books.filter((book) => book.source === 'drive');
+    const stored = readStoredBooks().filter((book) => book.source === 'drive');
+    window.localStorage.setItem(booksKey, JSON.stringify(nextBooks));
+    if (!sameJson(stored, nextBooks)) scheduleSync();
+  }, [books, scheduleSync]);
 
   useEffect(() => {
     let cancelled = false;
@@ -823,16 +1043,30 @@ export default function App() {
   }, [document, pdfQuery]);
 
   useEffect(() => {
+    if (readStoredPage(activeBook.id, 'last-page', 1) === page) return;
     window.localStorage.setItem(readingKey(activeBook.id, 'last-page'), String(page));
-  }, [activeBook.id, page]);
+    window.localStorage.setItem(readingUpdatedKey(activeBook.id, 'last-page'), String(Date.now()));
+    scheduleSync();
+  }, [activeBook.id, page, scheduleSync]);
 
   useEffect(() => {
+    if (readStoredPage(activeBook.id, 'bookmark', 1) === bookmark) return;
     window.localStorage.setItem(readingKey(activeBook.id, 'bookmark'), String(bookmark));
-  }, [activeBook.id, bookmark]);
+    window.localStorage.setItem(readingUpdatedKey(activeBook.id, 'bookmark'), String(Date.now()));
+    scheduleSync();
+  }, [activeBook.id, bookmark, scheduleSync]);
 
   useEffect(() => {
+    if (sameJson(readStoredNotes(activeBook.id), notes)) return;
     window.localStorage.setItem(readingKey(activeBook.id, 'notes'), JSON.stringify(notes));
-  }, [activeBook.id, notes]);
+    scheduleSync();
+  }, [activeBook.id, notes, scheduleSync]);
+
+  useEffect(() => {
+    if (sameJson(readDeletedNotes(activeBook.id), noteTombstones)) return;
+    window.localStorage.setItem(deletedNotesKey(activeBook.id), JSON.stringify(noteTombstones));
+    scheduleSync();
+  }, [activeBook.id, noteTombstones, scheduleSync]);
 
   const jumpToPage = useCallback((nextPage: number) => {
     if (!pageCount) return;
@@ -848,6 +1082,7 @@ export default function App() {
       page: selectedQuote?.page ?? page,
       text,
       createdAt: Date.now(),
+      updatedAt: Date.now(),
       ...(selectedQuote ? { selectedText: selectedQuote.text } : {}),
     }]);
     setNoteDraft('');
@@ -859,6 +1094,10 @@ export default function App() {
 
   const deleteNote = (id: string) => {
     setNotes((current) => current.filter((note) => note.id !== id));
+    setNoteTombstones((current) => [
+      ...current.filter((note) => note.id !== id),
+      { deletedAt: Date.now(), id },
+    ]);
   };
 
   const captureTextSelection = useCallback((selectedPage: number, text: string) => {
@@ -889,6 +1128,7 @@ export default function App() {
     setPage(readStoredPage(book.id, 'last-page', 1));
     setBookmark(readStoredPage(book.id, 'bookmark', 1));
     setNotes(readStoredNotes(book.id));
+    setNoteTombstones(readDeletedNotes(book.id));
     setPdfQuery('');
     setPdfSearchResults([]);
     setSelectedQuote(null);
@@ -1014,7 +1254,17 @@ export default function App() {
   }, [jumpToPage, page, screen]);
 
   if (screen === 'library') {
-    return <Library books={books} driveMessage={driveMessage} drivePending={drivePending} loadingBookId={loadingBookId} loadingProgress={loadingProgress} onAddFromDrive={addFromGoogleDrive} onOpen={openBook} />;
+    return <Library
+      books={books}
+      driveMessage={driveMessage}
+      drivePending={drivePending}
+      loadingBookId={loadingBookId}
+      loadingProgress={loadingProgress}
+      onAddFromDrive={addFromGoogleDrive}
+      onOpen={openBook}
+      onRetrySync={() => { void syncReaderState(); }}
+      syncStatus={syncStatus}
+    />;
   }
 
   const notesOnPage = notes.filter((note) => note.page === page);

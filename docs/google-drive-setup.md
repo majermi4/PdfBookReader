@@ -1,6 +1,6 @@
 # Google Drive setup
 
-Quiet Reader uses the Google Picker and the narrow `drive.file` OAuth scope. A person explicitly chooses a PDF or folder; the app does not request access to their entire Drive.
+Quiet Reader uses Google Picker and two narrow OAuth scopes. A person explicitly chooses a PDF or folder with `drive.file`; `drive.appdata` stores their private, synchronised reading state. The app does not request access to their entire Drive.
 
 ## 1. Create or select a Google Cloud project
 
@@ -20,7 +20,11 @@ In **APIs & Services > Library**, enable both:
 2. Select **External** if you will use a personal Google account outside an organisation.
 3. Enter `Quiet Reader` as the app name and your own email address for support and developer contact.
 4. While the app is in testing, add the Google accounts that should be allowed to test it under **Test users**.
-5. Do not request extra scopes. Quiet Reader asks only for `https://www.googleapis.com/auth/drive.file` when the user presses **Add from Google Drive**.
+5. Do not request extra scopes. Quiet Reader asks for only:
+   - `https://www.googleapis.com/auth/drive.file` for PDFs the person deliberately selects; and
+   - `https://www.googleapis.com/auth/drive.appdata` for Quiet Reader's private reading-state file.
+
+   The first launch asks the person to sign in and grant both. Later, the same Google session and grant are reused for book selection.
 
 ## 4. Create a browser OAuth client ID
 
@@ -72,9 +76,9 @@ Then rerun the **Deploy to GitHub Pages** workflow from the repository’s **Act
 
 ## 8. Test it
 
-1. Open the deployed app.
-2. Choose **Add from Google Drive**.
-3. Complete Google’s account and consent dialog.
-4. Choose a PDF, or choose a folder to add the PDFs it contains.
+1. Open the deployed app and complete Google’s account and consent dialog.
+2. Confirm that the library says reading progress syncs privately with Google Drive.
+3. Choose **Add from Google Drive**, then choose a PDF or a folder. No second consent dialog should be needed.
+4. Change the page, add a bookmark or note, then open Quiet Reader on a second device signed into the same Google account. The selected books and reading state should appear after launch.
 
-The selected books are remembered in that browser’s local library. Their reading position, manual bookmark, and notes remain local in this phase; cross-device sync is the next phase.
+The app stores a small JSON record in Google Drive's hidden `appDataFolder`; it does not upload or duplicate the selected PDFs. The local browser copy remains available for the current device, but the App Data record is not a backup: Google deletes it if the user uninstalls the app or manually removes the app data.
