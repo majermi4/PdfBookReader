@@ -66,6 +66,12 @@ type HighlightBox = {
   height: number;
 };
 
+function isExpectedPdfCancellation(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  return error.name === 'RenderingCancelledException'
+    || error.message.includes('Transport destroyed');
+}
+
 function readStoredPage(bookId: string, name: string, fallback: number) {
   const stored = Number(window.localStorage.getItem(readingKey(bookId, name)));
   return Number.isInteger(stored) && stored > 0 ? stored : fallback;
@@ -245,7 +251,7 @@ function PdfPage({
       }
       setHighlights(boxes);
     } catch (error) {
-      if (error instanceof Error && error.name === 'RenderingCancelledException') return;
+      if (renderVersion !== renderVersionRef.current || isExpectedPdfCancellation(error)) return;
       onRenderError(error instanceof Error ? error.message : 'Unable to render this PDF page.');
     }
   }, [document, onRenderError, pageNumber, renderWidth, searchQuery]);
@@ -525,7 +531,7 @@ export default function App() {
         setBookmark((current) => Math.min(current, loadedDocument.numPages));
       })
       .catch((loadError: unknown) => {
-        if (!cancelled) {
+        if (!cancelled && !isExpectedPdfCancellation(loadError)) {
           setError(loadError instanceof Error ? loadError.message : 'Unable to open this PDF.');
         }
       });
