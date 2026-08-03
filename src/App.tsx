@@ -570,6 +570,7 @@ export default function App() {
   const [bookmark, setBookmark] = useState(() => readStoredPage(demoBook.id, 'bookmark', 1));
   const [notes, setNotes] = useState<PageNote[]>(() => readStoredNotes(demoBook.id));
   const [controlsVisible, setControlsVisible] = useState(false);
+  const [bookmarkMenuOpen, setBookmarkMenuOpen] = useState(false);
   const [noteEditorOpen, setNoteEditorOpen] = useState(false);
   const [viewSettingsOpen, setViewSettingsOpen] = useState(false);
   const [contentsOpen, setContentsOpen] = useState(false);
@@ -827,6 +828,7 @@ export default function App() {
         setNoteEditorOpen(false);
         setViewSettingsOpen(false);
         setContentsOpen(false);
+        setBookmarkMenuOpen(false);
         setTocSearchOpen(false);
         setTocQuery('');
         setPdfSearchOpen(false);
@@ -885,6 +887,7 @@ export default function App() {
           onReaderClick={() => {
             if (controlsVisible) {
               setNoteEditorOpen(false);
+              setBookmarkMenuOpen(false);
               setViewSettingsOpen(false);
               setContentsOpen(false);
               setTocSearchOpen(false);
@@ -911,11 +914,21 @@ export default function App() {
             <span className="reader-title">{activeBook.title}</span>
             <div className="reader-actions">
               <button
+                aria-expanded={bookmarkMenuOpen}
+                aria-haspopup="menu"
                 aria-label={`Go to bookmark on PDF page ${bookmark}`}
                 className="bookmark-button reader-icon-button"
-                title={`Go to bookmark · ${bookmark}`}
+                title="Bookmark options"
                 type="button"
-                onClick={() => jumpToPage(bookmark)}
+                onClick={() => {
+                  setNoteEditorOpen(false);
+                  setViewSettingsOpen(false);
+                  setContentsOpen(false);
+                  setTocSearchOpen(false);
+                  setTocQuery('');
+                  setPdfSearchOpen(false);
+                  setBookmarkMenuOpen((open) => !open);
+                }}
               >
                 <svg aria-hidden="true" viewBox="0 0 24 24">
                   <path d="M6 4.75A1.75 1.75 0 0 1 7.75 3h8.5A1.75 1.75 0 0 1 18 4.75V21l-6-3.75L6 21V4.75Z" />
@@ -929,6 +942,7 @@ export default function App() {
                 type="button"
                 onClick={() => {
                   setNoteEditorOpen(false);
+                  setBookmarkMenuOpen(false);
                   setViewSettingsOpen(false);
                   setPdfSearchOpen(false);
                   if (contentsOpen) {
@@ -955,6 +969,7 @@ export default function App() {
                   setNoteEditorOpen(false);
                   setViewSettingsOpen(false);
                   setContentsOpen(false);
+                  setBookmarkMenuOpen(false);
                   setTocSearchOpen(false);
                   setTocQuery('');
                   setPdfSearchOpen((open) => !open);
@@ -972,12 +987,10 @@ export default function App() {
               {page} / {pageCount}
             </span>
             <span className="control-divider" aria-hidden="true" />
-            <button className="set-bookmark" type="button" onClick={() => setBookmark(page)}>
-              Set mark
-            </button>
             <button type="button" onClick={() => {
               setViewSettingsOpen(false);
               setContentsOpen(false);
+              setBookmarkMenuOpen(false);
               setTocSearchOpen(false);
               setTocQuery('');
               setPdfSearchOpen(false);
@@ -988,6 +1001,7 @@ export default function App() {
             <button aria-expanded={viewSettingsOpen} type="button" onClick={() => {
               setNoteEditorOpen(false);
               setContentsOpen(false);
+              setBookmarkMenuOpen(false);
               setTocSearchOpen(false);
               setTocQuery('');
               setPdfSearchOpen(false);
@@ -1007,6 +1021,24 @@ export default function App() {
             <span>{Math.round(zoom * 100)}%</span>
             <button type="button" aria-label="Zoom in" onClick={() => setZoom((value) => Math.min(2, value + .15))}>+</button>
           </div>
+        </section>
+      )}
+
+      {bookmarkMenuOpen && (
+        <section className="bookmark-menu" aria-label="Bookmark options" role="menu">
+          <button type="button" role="menuitem" onClick={() => {
+            jumpToPage(bookmark);
+            setBookmarkMenuOpen(false);
+            setControlsVisible(false);
+          }}>
+            Go to bookmark <small>p. {bookmark}</small>
+          </button>
+          <button type="button" role="menuitem" onClick={() => {
+            setBookmark(page);
+            setBookmarkMenuOpen(false);
+          }}>
+            Set bookmark here <small>p. {page}</small>
+          </button>
         </section>
       )}
 

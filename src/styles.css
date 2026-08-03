@@ -115,9 +115,17 @@ h1 { font-size: 34px; letter-spacing: -.055em; margin: 0; }
 
 .search-button[aria-pressed="true"] { border-color: #a8d5b1 !important; color: #bce4c4 !important; }
 
-.set-bookmark { color: #a8d5b1 !important; }
-
 .contents-panel, .pdf-search-panel { background: #f7f8f3; border-radius: 12px; box-shadow: 0 16px 40px rgb(0 0 0 / .35); color: #20231f; max-height: min(590px, calc(100dvh - 96px)); overflow: hidden; position: absolute; right: clamp(18px, 5vw, 76px); top: 70px; width: min(310px, calc(100vw - 28px)); z-index: 3; }
+
+.bookmark-menu { background: rgb(22 26 22 / .98); border: 1px solid rgb(255 255 255 / .2); border-radius: 10px; box-shadow: 0 12px 28px rgb(0 0 0 / .3); overflow: hidden; position: absolute; right: clamp(18px, 5vw, 76px); top: calc(70px + env(safe-area-inset-top)); width: min(240px, calc(100vw - 28px)); z-index: 3; }
+
+.bookmark-menu button { align-items: center; background: transparent; border: 0; color: #eff2ec; cursor: pointer; display: flex; font: inherit; justify-content: space-between; min-height: 42px; padding: 10px 12px; text-align: left; width: 100%; }
+
+.bookmark-menu button + button { border-top: 1px solid rgb(255 255 255 / .12); }
+
+.bookmark-menu button:hover, .bookmark-menu button:focus-visible { background: rgb(255 255 255 / .14); outline: 0; }
+
+.bookmark-menu small { color: #a8d5b1; font-size: 12px; }
 
 .contents-header, .search-panel-header { align-items: center; border-bottom: 1px solid #dce1d9; display: flex; justify-content: space-between; min-height: 48px; padding: 9px 12px; }
 
@@ -225,6 +233,7 @@ h1 { font-size: 34px; letter-spacing: -.055em; margin: 0; }
   .reader-icon-button { height: 48px; width: 48px; }
   .reader-icon-button svg { height: 23px; width: 23px; }
   .contents-panel, .pdf-search-panel { left: 12px; max-height: min(620px, calc(100dvh - 132px)); right: 12px; top: 118px; width: auto; }
+  .bookmark-menu { right: 12px; top: calc(118px + env(safe-area-inset-top)); }
   .contents-header, .search-panel-header { min-height: 56px; padding: 10px 14px; }
   .contents-header h2, .search-panel-header h2 { font-size: 20px; }
   .contents-header button, .search-panel-header button { height: 40px; width: 40px; }
