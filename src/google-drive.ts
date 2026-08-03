@@ -152,6 +152,11 @@ export class DriveAppDataConflictError extends Error {
   }
 }
 
+function createMultipartBoundary() {
+  const uuid = globalThis.crypto?.randomUUID?.();
+  return `quiet-reader-${uuid ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
+}
+
 export async function pickGoogleDriveItems(config: GoogleDriveConfig): Promise<PickerResult | null> {
   await ensureGooglePicker();
   const accessToken = await requestAccessToken(config.clientId);
@@ -225,7 +230,7 @@ export async function writeDriveAppDataJson<T>(
   accessToken: string,
   existing?: Pick<DriveAppDataFile<unknown>, 'eTag' | 'fileId'>,
 ): Promise<Pick<DriveAppDataFile<T>, 'eTag' | 'fileId'>> {
-  const boundary = `quiet-reader-${crypto.randomUUID()}`;
+  const boundary = createMultipartBoundary();
   const metadata = JSON.stringify({
     mimeType: 'application/json',
     name,
