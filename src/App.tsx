@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as pdfjs from 'pdfjs-dist';
 import { cacheDrivePdf, readCachedDrivePdf } from './drive-cache';
 import {
@@ -70,15 +70,7 @@ type HighlightBox = {
 };
 
 type LinkedTextNote = Pick<PageNote, 'id' | 'selectedText'>;
-
-function linkedNoteForText(text: string, notes: LinkedTextNote[]) {
-  const normalizedText = text.replace(/\s+/g, ' ').trim().toLowerCase();
-  if (normalizedText.length < 3) return undefined;
-  return notes.find((note) => {
-    const selection = note.selectedText?.replace(/\s+/g, ' ').trim().toLowerCase();
-    return selection && (selection.includes(normalizedText) || normalizedText.includes(selection));
-  });
-}
+type LinkedHighlightBox = HighlightBox & { noteId: string };
 
 function isExpectedPdfCancellation(error: unknown) {
   if (!(error instanceof Error)) return false;
@@ -214,7 +206,7 @@ function PdfPage({
   const activeTaskRef = useRef<pdfjs.RenderTask | null>(null);
   const renderVersionRef = useRef(0);
   const [highlights, setHighlights] = useState<HighlightBox[]>([]);
-  const [textLayer, setTextLayer] = useState<Array<{ fontSize: number; left: number; text: string; top: number; transform: string }>>([]);
+  const [textLayer, setTextLayer] = useState<Array<{ fontSize: number; height: number; left: number; text: string; top: number; transform: string; width: number }>>([]);
 
   const render = useCallback(async () => {
     const stage = stageRef.current;
@@ -259,10 +251,12 @@ function PdfPage({
         const fontSize = Math.hypot(transform[2], transform[3]);
         return [{
           fontSize,
+          height: fontSize,
           left: transform[4],
           text: item.str,
           top: transform[5] - fontSize,
           transform: `rotate(${Math.atan2(transform[1], transform[0])}rad)`,
+          width: Math.abs(item.width * viewport.scale),
         }];
       }));
 
@@ -304,6 +298,28 @@ function PdfPage({
     }, 0);
   };
 
+  const linkedHighlights = useMemo<LinkedHighlightBox[]>(() => linkedNotes.flatMap((note) => {
+    const selection = note.selectedText?.replace(/\s+/g, ' ').trim().toLowerCase();
+    if (!selection) return [];
+    return textLayer.flatMap((item) => {
+      const itemText = item.text.toLowerCase();
+      const selectionIndex = itemText.indexOf(selection);
+      if (selectionIndex >= 0) {
+        return [{
+          height: item.height,
+          left: item.left + (item.width * selectionIndex) / item.text.length,
+          noteId: note.id,
+          top: item.top,
+          width: Math.max(4, (item.width * selection.length) / item.text.length),
+        }];
+      }
+      if (selection.includes(itemText) && itemText.trim().length >= 3) {
+        return [{ height: item.height, left: item.left, noteId: note.id, top: item.top, width: item.width }];
+      }
+      return [];
+    });
+  }), [linkedNotes, textLayer]);
+
   useEffect(() => {
     void render();
     if (renderWidth) {
@@ -341,29 +357,42 @@ function PdfPage({
         </div>
       )}
       <div className="pdf-text-layer" onMouseUp={captureTextSelection} onTouchEnd={captureTextSelection}>
-        {textLayer.map((item, index) => {
-          const linkedNote = linkedNoteForText(item.text, linkedNotes);
-          return (
-            <span
-              className={linkedNote ? 'linked-note-text' : undefined}
-              key={`${index}-${item.left}-${item.top}`}
+        {textLayer.map((item, index) => (
+          <span
+            key={`${index}-${item.left}-${item.top}`}
+            style={{
+              fontSize: `${item.fontSize}px`,
+              left: `${item.left}px`,
+              top: `${item.top}px`,
+              transform: item.transform,
+            }}
+          >
+            {item.text}
+          </span>
+        ))}
+      </div>
+      {linkedHighlights.length > 0 && (
+        <div className="pdf-linked-highlights">
+          {linkedHighlights.map((highlight, index) => (
+            <button
+              aria-label="Open linked note"
+              key={`${highlight.noteId}-${highlight.left}-${highlight.top}-${index}`}
+              type="button"
               onClick={(event) => {
-                if (!linkedNote || !window.getSelection()?.isCollapsed) return;
                 event.stopPropagation();
-                onLinkedNoteOpen(linkedNote.id);
+                window.getSelection()?.removeAllRanges();
+                onLinkedNoteOpen(highlight.noteId);
               }}
               style={{
-                fontSize: `${item.fontSize}px`,
-                left: `${item.left}px`,
-                top: `${item.top}px`,
-                transform: item.transform,
+                height: `${highlight.height}px`,
+                left: `${highlight.left}px`,
+                top: `${highlight.top}px`,
+                width: `${highlight.width}px`,
               }}
-            >
-              {item.text}
-            </span>
-          );
-        })}
-      </div>
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

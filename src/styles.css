@@ -109,7 +109,11 @@ h1 { font-size: 34px; letter-spacing: -.055em; margin: 0; }
 
 .pdf-text-layer span::selection { background: rgb(121 193 139 / .5); }
 
-.pdf-text-layer .linked-note-text { background: rgb(132 201 143 / .42); border-radius: 2px; box-shadow: inset 0 -1px 0 rgb(48 108 62 / .4); cursor: pointer; }
+.pdf-linked-highlights { inset: 0; position: absolute; }
+
+.pdf-linked-highlights button { background: rgb(132 201 143 / .42); border: 0; border-radius: 2px; box-shadow: inset 0 -1px 0 rgb(48 108 62 / .4); cursor: pointer; padding: 0; position: absolute; }
+
+.pdf-linked-highlights button:hover, .pdf-linked-highlights button:focus-visible { background: rgb(102 183 116 / .58); outline: 1px solid rgb(34 96 46 / .65); }
 
 .reader-toolbar { align-items: center; backdrop-filter: blur(14px); background: rgb(22 26 22 / .94); border-bottom: 1px solid rgb(255 255 255 / .11); box-shadow: 0 6px 18px rgb(0 0 0 / .18); display: flex; gap: 16px; left: 0; padding: calc(18px + env(safe-area-inset-top)) clamp(18px, 5vw, 76px) 18px; position: absolute; right: 0; top: 0; z-index: 1; }
 
