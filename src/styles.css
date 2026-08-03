@@ -24,10 +24,17 @@ h1 { font-size: 34px; letter-spacing: -.055em; margin: 0; }
 .library-content > p { color: #687169; font-size: 17px; margin: 10px 0 22px; }
 
 .drive-button { background: #315f42; border: 0; border-radius: 10px; color: #fff; cursor: not-allowed; opacity: .75; padding: 12px 16px; }
+.drive-button:not(:disabled) { cursor: pointer; opacity: 1; }
 
-.book-row { align-items: center; background: transparent; border: 0; border-bottom: 1px solid #dde1d9; border-top: 1px solid #dde1d9; color: inherit; cursor: pointer; display: grid; gap: 18px; grid-template-columns: 54px minmax(0, 1fr) minmax(172px, auto); margin-top: 34px; padding: 16px 4px; text-align: left; width: 100%; }
+.drive-message { color: #315f42 !important; font-size: 14px !important; margin: 13px 0 -14px !important; max-width: 620px; }
+
+.book-list { margin-top: 34px; }
+
+.book-row { align-items: center; background: transparent; border: 0; border-bottom: 1px solid #dde1d9; color: inherit; cursor: pointer; display: grid; gap: 18px; grid-template-columns: 54px minmax(0, 1fr) minmax(172px, auto); padding: 16px 4px; text-align: left; width: 100%; }
+.book-row:first-child { border-top: 1px solid #dde1d9; }
 
 .book-cover { background: #eef0ea; height: 72px; object-fit: cover; width: 50px; }
+.book-cover-drive { align-items: center; background: #e5f0e7; color: #315f42; display: inline-flex; font-size: 12px; font-weight: 700; justify-content: center; letter-spacing: .06em; }
 
 .book-details { min-width: 0; }
 
@@ -190,6 +197,7 @@ h1 { font-size: 34px; letter-spacing: -.055em; margin: 0; }
   .app-name { font-size: 22px; }
   .library-content > p, .book-meta { font-size: 17px; }
   .drive-button { font-size: 17px; min-height: 48px; padding: 12px 16px; }
+  .drive-message { font-size: 16px !important; margin-bottom: -12px !important; }
   .book-row { gap: 13px; grid-template-columns: 50px minmax(0, 1fr); }
   .book-title { font-size: 18px; }
   .book-progress { font-size: 16px; grid-column: 2; text-align: left; }

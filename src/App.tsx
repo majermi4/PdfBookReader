@@ -1,19 +1,38 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as pdfjs from 'pdfjs-dist';
+import {
+  downloadGoogleDrivePdf,
+  googleDriveConfig,
+  isDriveFolder,
+  isGoogleDriveConfigured,
+  listFolderPdfs,
+  pickGoogleDriveItems,
+  requestGoogleDriveAccess,
+  type DrivePickerItem,
+} from './google-drive';
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
   import.meta.url,
 ).toString();
 
-const sampleBook = {
-  id: 'quiet-reader-demo',
-  title: 'A Short Guide to Quiet Reading',
-  authors: 'Quiet Reader',
-  source: `${import.meta.env.BASE_URL}demo/quiet-reader-demo.pdf`,
+type Book = {
+  id: string;
+  source: 'demo' | 'drive';
+  title: string;
+  subtitle: string;
+  driveFileId?: string;
 };
 
-const readingKey = (name: string) => `quiet-reader:${sampleBook.id}:${name}`;
+const demoBook: Book = {
+  id: 'quiet-reader-demo',
+  source: 'demo',
+  subtitle: 'Quiet Reader · Demo PDF',
+  title: 'A Short Guide to Quiet Reading',
+};
+
+const booksKey = 'quiet-reader:books';
+const readingKey = (bookId: string, name: string) => `quiet-reader:${bookId}:${name}`;
 
 type PageNote = {
   id: string;
@@ -46,14 +65,14 @@ type HighlightBox = {
   height: number;
 };
 
-function readStoredPage(name: string, fallback: number) {
-  const stored = Number(window.localStorage.getItem(readingKey(name)));
+function readStoredPage(bookId: string, name: string, fallback: number) {
+  const stored = Number(window.localStorage.getItem(readingKey(bookId, name)));
   return Number.isInteger(stored) && stored > 0 ? stored : fallback;
 }
 
-function readStoredNotes(): PageNote[] {
+function readStoredNotes(bookId: string): PageNote[] {
   try {
-    const stored = window.localStorage.getItem(readingKey('notes'));
+    const stored = window.localStorage.getItem(readingKey(bookId, 'notes'));
     const parsed = stored ? JSON.parse(stored) : [];
     return Array.isArray(parsed) ? parsed.filter((note): note is PageNote => (
       typeof note?.id === 'string'
@@ -63,6 +82,24 @@ function readStoredNotes(): PageNote[] {
     )) : [];
   } catch {
     return [];
+  }
+}
+
+function readStoredBooks(): Book[] {
+  try {
+    const stored = window.localStorage.getItem(booksKey);
+    const parsed = stored ? JSON.parse(stored) : [];
+    if (!Array.isArray(parsed)) return [demoBook];
+    const driveBooks = parsed.filter((book): book is Book => (
+      typeof book?.id === 'string'
+      && book.source === 'drive'
+      && typeof book.driveFileId === 'string'
+      && typeof book.title === 'string'
+      && typeof book.subtitle === 'string'
+    ));
+    return [demoBook, ...driveBooks];
+  } catch {
+    return [demoBook];
   }
 }
 
@@ -382,13 +419,17 @@ function ContinuousPdf({
 }
 
 function Library({
-  lastPage,
-  bookmark,
+  books,
+  driveMessage,
+  drivePending,
+  onAddFromDrive,
   onOpen,
 }: {
-  lastPage: number;
-  bookmark: number;
-  onOpen: () => void;
+  books: Book[];
+  driveMessage: string | null;
+  drivePending: boolean;
+  onAddFromDrive: () => void;
+  onOpen: (book: Book) => void;
 }) {
   return (
     <main className="library-page">
@@ -397,21 +438,34 @@ function Library({
       </header>
       <section className="library-content" aria-labelledby="library-title">
         <h1 id="library-title">Your books</h1>
-        <p>Only books you add from Google Drive will appear here.</p>
-        <button className="drive-button" type="button" disabled>
-          Google Drive connection comes next
+        <p>Choose individual PDFs or a folder from Google Drive. The included demo is safe to explore.</p>
+        <button className="drive-button" type="button" disabled={drivePending} onClick={onAddFromDrive}>
+          {drivePending ? 'Opening Google Drive…' : 'Add from Google Drive'}
         </button>
-        <button className="book-row" type="button" onClick={onOpen}>
-          <img className="book-cover" src="/fundamentals-cover.png" alt="" />
-          <span className="book-details">
-            <span className="book-title">{sampleBook.title}</span>
-            <span className="book-meta">{sampleBook.authors} · Demo PDF</span>
-          </span>
-          <span className="book-progress">
-            <strong>Main bookmark · p. {bookmark}</strong>
-            Last viewed · PDF page {lastPage}
-          </span>
-        </button>
+        {driveMessage && <p className="drive-message" role="status">{driveMessage}</p>}
+        <div className="book-list">
+          {books.map((book) => {
+            const bookmark = readStoredPage(book.id, 'bookmark', 1);
+            const lastPage = readStoredPage(book.id, 'last-page', 1);
+            return (
+              <button className="book-row" key={book.id} type="button" onClick={() => onOpen(book)}>
+                {book.source === 'demo' ? (
+                  <img className="book-cover" src={`${import.meta.env.BASE_URL}icons/quiet-reader-180.png`} alt="" />
+                ) : (
+                  <span className="book-cover book-cover-drive" aria-hidden="true">PDF</span>
+                )}
+                <span className="book-details">
+                  <span className="book-title">{book.title}</span>
+                  <span className="book-meta">{book.subtitle}</span>
+                </span>
+                <span className="book-progress">
+                  <strong>Main bookmark · p. {bookmark}</strong>
+                  Last viewed · PDF page {lastPage}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </section>
     </main>
   );
@@ -419,11 +473,16 @@ function Library({
 
 export default function App() {
   const [screen, setScreen] = useState<'library' | 'reader'>('library');
+  const [books, setBooks] = useState<Book[]>(readStoredBooks);
+  const [activeBook, setActiveBook] = useState<Book>(demoBook);
+  const [drivePdfData, setDrivePdfData] = useState<Uint8Array | null>(null);
+  const [driveMessage, setDriveMessage] = useState<string | null>(null);
+  const [drivePending, setDrivePending] = useState(false);
   const [document, setDocument] = useState<pdfjs.PDFDocumentProxy | null>(null);
   const [pageCount, setPageCount] = useState(0);
-  const [page, setPage] = useState(() => readStoredPage('last-page', 1));
-  const [bookmark, setBookmark] = useState(() => readStoredPage('bookmark', 1));
-  const [notes, setNotes] = useState<PageNote[]>(readStoredNotes);
+  const [page, setPage] = useState(() => readStoredPage(demoBook.id, 'last-page', 1));
+  const [bookmark, setBookmark] = useState(() => readStoredPage(demoBook.id, 'bookmark', 1));
+  const [notes, setNotes] = useState<PageNote[]>(() => readStoredNotes(demoBook.id));
   const [controlsVisible, setControlsVisible] = useState(false);
   const [noteEditorOpen, setNoteEditorOpen] = useState(false);
   const [viewSettingsOpen, setViewSettingsOpen] = useState(false);
@@ -445,8 +504,17 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    window.localStorage.setItem(booksKey, JSON.stringify(books.filter((book) => book.source === 'drive')));
+  }, [books]);
+
+  useEffect(() => {
     let cancelled = false;
-    const task = pdfjs.getDocument({ url: sampleBook.source });
+    setDocument(null);
+    setPageCount(0);
+    if (activeBook.source === 'drive' && !drivePdfData) return undefined;
+    const task = activeBook.source === 'drive'
+      ? pdfjs.getDocument({ data: drivePdfData! })
+      : pdfjs.getDocument({ url: `${import.meta.env.BASE_URL}demo/quiet-reader-demo.pdf` });
     task.promise
       .then((loadedDocument) => {
         if (cancelled) return;
@@ -457,7 +525,7 @@ export default function App() {
       })
       .catch((loadError: unknown) => {
         if (!cancelled) {
-          setError(loadError instanceof Error ? loadError.message : 'Unable to open the sample PDF.');
+          setError(loadError instanceof Error ? loadError.message : 'Unable to open this PDF.');
         }
       });
 
@@ -465,7 +533,7 @@ export default function App() {
       cancelled = true;
       void task.destroy();
     };
-  }, []);
+  }, [activeBook, drivePdfData]);
 
   useEffect(() => {
     let cancelled = false;
@@ -525,16 +593,16 @@ export default function App() {
   }, [document, pdfQuery]);
 
   useEffect(() => {
-    window.localStorage.setItem(readingKey('last-page'), String(page));
-  }, [page]);
+    window.localStorage.setItem(readingKey(activeBook.id, 'last-page'), String(page));
+  }, [activeBook.id, page]);
 
   useEffect(() => {
-    window.localStorage.setItem(readingKey('bookmark'), String(bookmark));
-  }, [bookmark]);
+    window.localStorage.setItem(readingKey(activeBook.id, 'bookmark'), String(bookmark));
+  }, [activeBook.id, bookmark]);
 
   useEffect(() => {
-    window.localStorage.setItem(readingKey('notes'), JSON.stringify(notes));
-  }, [notes]);
+    window.localStorage.setItem(readingKey(activeBook.id, 'notes'), JSON.stringify(notes));
+  }, [activeBook.id, notes]);
 
   const jumpToPage = useCallback((nextPage: number) => {
     if (!pageCount) return;
@@ -565,6 +633,82 @@ export default function App() {
     setPdfSearchResults([]);
   };
 
+  const openReader = (book: Book, pdfData: Uint8Array | null = null) => {
+    setActiveBook(book);
+    setDrivePdfData(pdfData);
+    setPage(readStoredPage(book.id, 'last-page', 1));
+    setBookmark(readStoredPage(book.id, 'bookmark', 1));
+    setNotes(readStoredNotes(book.id));
+    setPdfQuery('');
+    setPdfSearchResults([]);
+    setError(null);
+    setScreen('reader');
+  };
+
+  const openBook = async (book: Book) => {
+    if (book.source === 'demo') {
+      openReader(book);
+      return;
+    }
+    try {
+      setDrivePending(true);
+      const accessToken = await requestGoogleDriveAccess(googleDriveConfig);
+      const pdfData = await downloadGoogleDrivePdf(book.driveFileId!, accessToken);
+      openReader(book, pdfData);
+    } catch (loadError) {
+      setDriveMessage(loadError instanceof Error ? loadError.message : 'Unable to open this Drive PDF.');
+    } finally {
+      setDrivePending(false);
+    }
+  };
+
+  const addPickedBooks = (items: DrivePickerItem[]) => {
+    const newBooks = items.map((item) => ({
+      driveFileId: item.id,
+      id: `drive:${item.id}`,
+      source: 'drive' as const,
+      subtitle: 'Google Drive PDF',
+      title: item.name.replace(/\.pdf$/i, ''),
+    }));
+    setBooks((current) => [
+      ...current,
+      ...newBooks.filter((book) => !current.some((existing) => existing.id === book.id)),
+    ]);
+    return newBooks[0] ?? null;
+  };
+
+  const addFromGoogleDrive = async () => {
+    if (!isGoogleDriveConfigured) {
+      setDriveMessage('Google Drive is ready in the app, but its public configuration has not been added yet. Follow the setup steps below.');
+      return;
+    }
+    try {
+      setDrivePending(true);
+      setDriveMessage(null);
+      const selection = await pickGoogleDriveItems(googleDriveConfig);
+      if (!selection) return;
+      const picked = selection.items[0];
+      if (!picked) return;
+      const pdfs = isDriveFolder(picked)
+        ? await listFolderPdfs(picked.id, selection.accessToken)
+        : [picked];
+      if (!pdfs.length) {
+        setDriveMessage('That folder does not contain any PDF files that Google Drive shared with Quiet Reader.');
+        return;
+      }
+      const firstBook = addPickedBooks(pdfs);
+      setDriveMessage(isDriveFolder(picked) ? `Added ${pdfs.length} PDFs from “${picked.name}”.` : `Added “${picked.name}”.`);
+      if (firstBook) {
+        const pdfData = await downloadGoogleDrivePdf(firstBook.driveFileId!, selection.accessToken);
+        openReader(firstBook, pdfData);
+      }
+    } catch (driveError) {
+      setDriveMessage(driveError instanceof Error ? driveError.message : 'Unable to add from Google Drive.');
+    } finally {
+      setDrivePending(false);
+    }
+  };
+
   useEffect(() => {
     if (screen !== 'reader') return;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -583,7 +727,7 @@ export default function App() {
   }, [screen]);
 
   if (screen === 'library') {
-    return <Library bookmark={bookmark} lastPage={page} onOpen={() => setScreen('reader')} />;
+    return <Library books={books} driveMessage={driveMessage} drivePending={drivePending} onAddFromDrive={addFromGoogleDrive} onOpen={openBook} />;
   }
 
   const notesOnPage = notes.filter((note) => note.page === page);
@@ -622,7 +766,7 @@ export default function App() {
             <button className="text-button" type="button" onClick={() => setScreen('library')}>
               ‹ Library
             </button>
-            <span className="reader-title">{sampleBook.title}</span>
+            <span className="reader-title">{activeBook.title}</span>
             <div className="reader-actions">
               <button
                 aria-label={`Go to bookmark on PDF page ${bookmark}`}

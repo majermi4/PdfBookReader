@@ -22,7 +22,8 @@ Open the local URL printed by Vite. Select the supplied sample book in the Libra
 
 ## Not implemented yet
 
-- Google Drive sign-in and deliberate PDF/folder selection.
 - Cross-device sync.
-- Text selection, highlights, notes, and the notes list.
-- Offline PDF caching and PWA installation support.
+
+## Google Drive
+
+The first Drive phase is implemented: users can explicitly choose a PDF or folder through Google Picker, and the selected books appear in the local library. Configure the required browser-visible values using [the Google Drive setup guide](docs/google-drive-setup.md).
