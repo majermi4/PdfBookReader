@@ -71,19 +71,32 @@ async function ensureGooglePicker() {
 
 function requestAccessToken(clientId: string) {
   return new Promise<string>((resolve, reject) => {
+    let settled = false;
+    const timeout = window.setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        reject(new Error('Google Drive sign-in was not completed. Please try again.'));
+      }
+    }, 60_000);
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeout);
+      callback();
+    };
     const client = window.google?.accounts.oauth2.initTokenClient({
       callback: (response) => {
         if (response.error || !response.access_token) {
-          reject(new Error('Google Drive permission was not granted.'));
+          finish(() => reject(new Error('Google Drive permission was not granted.')));
           return;
         }
-        resolve(response.access_token);
+        finish(() => resolve(response.access_token!));
       },
       client_id: clientId,
       scope: DRIVE_FILE_SCOPE,
     });
     if (!client) {
-      reject(new Error('Google Drive sign-in is unavailable. Please try again.'));
+      finish(() => reject(new Error('Google Drive sign-in is unavailable. Please try again.')));
       return;
     }
     client.requestAccessToken({ prompt: 'consent' });
