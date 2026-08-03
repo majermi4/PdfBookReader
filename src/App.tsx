@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as pdfjs from 'pdfjs-dist';
+import { cacheDrivePdf, readCachedDrivePdf } from './drive-cache';
 import {
   downloadGoogleDrivePdf,
   googleDriveConfig,
@@ -652,8 +653,14 @@ export default function App() {
     }
     try {
       setDrivePending(true);
+      const cachedPdf = await readCachedDrivePdf(book.driveFileId!).catch(() => null);
+      if (cachedPdf) {
+        openReader(book, cachedPdf);
+        return;
+      }
       const accessToken = await requestGoogleDriveAccess(googleDriveConfig);
       const pdfData = await downloadGoogleDrivePdf(book.driveFileId!, accessToken);
+      void cacheDrivePdf(book.driveFileId!, pdfData).catch(() => undefined);
       openReader(book, pdfData);
     } catch (loadError) {
       setDriveMessage(loadError instanceof Error ? loadError.message : 'Unable to open this Drive PDF.');
@@ -700,6 +707,7 @@ export default function App() {
       setDriveMessage(isDriveFolder(picked) ? `Added ${pdfs.length} PDFs from “${picked.name}”.` : `Added “${picked.name}”.`);
       if (firstBook) {
         const pdfData = await downloadGoogleDrivePdf(firstBook.driveFileId!, selection.accessToken);
+        void cacheDrivePdf(firstBook.driveFileId!, pdfData).catch(() => undefined);
         openReader(firstBook, pdfData);
       }
     } catch (driveError) {

@@ -15,6 +15,12 @@ type PickerResult = {
   items: DrivePickerItem[];
 };
 
+type TokenResponse = {
+  access_token?: string;
+  error?: string;
+  expires_in?: number;
+};
+
 const DRIVE_FILE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder';
 const GOOGLE_API_SCRIPT = 'https://apis.google.com/js/api.js';
@@ -43,6 +49,7 @@ declare global {
 let apiScript: Promise<void> | null = null;
 let identityScript: Promise<void> | null = null;
 let pickerLibrary: Promise<void> | null = null;
+let activeAccessToken: { value: string; expiresAt: number } | null = null;
 
 function loadScript(src: string) {
   const existing = document.querySelector(`script[src="${src}"]`);
@@ -70,6 +77,10 @@ async function ensureGooglePicker() {
 }
 
 function requestAccessToken(clientId: string) {
+  if (activeAccessToken && activeAccessToken.expiresAt > Date.now() + 30_000) {
+    return Promise.resolve(activeAccessToken.value);
+  }
+
   return new Promise<string>((resolve, reject) => {
     let settled = false;
     const timeout = window.setTimeout(() => {
@@ -85,12 +96,18 @@ function requestAccessToken(clientId: string) {
       callback();
     };
     const client = window.google?.accounts.oauth2.initTokenClient({
-      callback: (response) => {
-        if (response.error || !response.access_token) {
+      callback: (response: TokenResponse) => {
+        const token = response.access_token;
+        if (response.error || !token) {
           finish(() => reject(new Error('Google Drive permission was not granted.')));
           return;
         }
-        finish(() => resolve(response.access_token!));
+        const expiresInSeconds = response.expires_in ?? 3_000;
+        activeAccessToken = {
+          value: token,
+          expiresAt: Date.now() + expiresInSeconds * 1_000,
+        };
+        finish(() => resolve(token));
       },
       client_id: clientId,
       scope: DRIVE_FILE_SCOPE,
@@ -99,7 +116,9 @@ function requestAccessToken(clientId: string) {
       finish(() => reject(new Error('Google Drive sign-in is unavailable. Please try again.')));
       return;
     }
-    client.requestAccessToken({ prompt: 'consent' });
+    // An empty prompt reuses an existing Google grant where possible. The
+    // consent screen is still shown when the user has not granted access yet.
+    client.requestAccessToken({ prompt: '' });
   });
 }
 
