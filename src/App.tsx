@@ -485,12 +485,16 @@ function Library({
   books,
   driveMessage,
   drivePending,
+  loadingBookId,
+  loadingProgress,
   onAddFromDrive,
   onOpen,
 }: {
   books: Book[];
   driveMessage: string | null;
   drivePending: boolean;
+  loadingBookId: string | null;
+  loadingProgress: number | null;
   onAddFromDrive: () => void;
   onOpen: (book: Book) => void;
 }) {
@@ -511,8 +515,9 @@ function Library({
             const bookmark = readStoredPage(book.id, 'bookmark', 1);
             const lastPage = readStoredPage(book.id, 'last-page', 1);
             const progress = bookmarkProgress(bookmark, book.pageCount);
+            const isLoading = loadingBookId === book.id;
             return (
-              <button className="book-row" key={book.id} type="button" onClick={() => onOpen(book)}>
+              <button className="book-row" key={book.id} type="button" disabled={drivePending && !isLoading} onClick={() => onOpen(book)}>
                 {book.source === 'demo' ? (
                   <img className="book-cover" src={`${import.meta.env.BASE_URL}icons/quiet-reader-180.png`} alt="" />
                 ) : (
@@ -523,11 +528,23 @@ function Library({
                   <span className="book-meta">{book.subtitle}</span>
                 </span>
                 <span className="book-progress">
-                  <strong>{book.pageCount ? `Main bookmark · ${bookmark} / ${book.pageCount}` : `Main bookmark · p. ${bookmark}`}</strong>
-                  Last viewed · PDF page {lastPage}
-                  <span className="book-progress-meter" aria-hidden="true">
-                    <span style={{ width: `${progress}%` }} />
-                  </span>
+                  {isLoading ? (
+                    <>
+                      <strong>Opening book{loadingProgress === null ? '…' : ` · ${loadingProgress}%`}</strong>
+                      <span className="book-loading-copy">Preparing your PDF</span>
+                      <span className={`book-progress-meter${loadingProgress === null ? ' is-loading' : ''}`} aria-hidden="true">
+                        <span style={{ width: loadingProgress === null ? undefined : `${loadingProgress}%` }} />
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <strong>{book.pageCount ? `Main bookmark · ${bookmark} / ${book.pageCount}` : `Main bookmark · p. ${bookmark}`}</strong>
+                      Last viewed · PDF page {lastPage}
+                      <span className="book-progress-meter" aria-hidden="true">
+                        <span style={{ width: `${progress}%` }} />
+                      </span>
+                    </>
+                  )}
                 </span>
               </button>
             );
@@ -545,6 +562,8 @@ export default function App() {
   const [drivePdfData, setDrivePdfData] = useState<Uint8Array | null>(null);
   const [driveMessage, setDriveMessage] = useState<string | null>(null);
   const [drivePending, setDrivePending] = useState(false);
+  const [loadingBookId, setLoadingBookId] = useState<string | null>(null);
+  const [loadingProgress, setLoadingProgress] = useState<number | null>(null);
   const [document, setDocument] = useState<pdfjs.PDFDocumentProxy | null>(null);
   const [pageCount, setPageCount] = useState(0);
   const [page, setPage] = useState(() => readStoredPage(demoBook.id, 'last-page', 1));
@@ -719,25 +738,30 @@ export default function App() {
   };
 
   const openBook = async (book: Book) => {
+    if (drivePending) return;
     if (book.source === 'demo') {
       openReader(book);
       return;
     }
     try {
       setDrivePending(true);
+      setLoadingBookId(book.id);
+      setLoadingProgress(null);
       const cachedPdf = await readCachedDrivePdf(book.driveFileId!).catch(() => null);
       if (cachedPdf) {
         openReader(book, cachedPdf);
         return;
       }
       const accessToken = await requestGoogleDriveAccess(googleDriveConfig);
-      const pdfData = await downloadGoogleDrivePdf(book.driveFileId!, accessToken);
+      const pdfData = await downloadGoogleDrivePdf(book.driveFileId!, accessToken, setLoadingProgress);
       void cacheDrivePdf(book.driveFileId!, pdfData).catch(() => undefined);
       openReader(book, pdfData);
     } catch (loadError) {
       setDriveMessage(loadError instanceof Error ? loadError.message : 'Unable to open this Drive PDF.');
     } finally {
       setDrivePending(false);
+      setLoadingBookId(null);
+      setLoadingProgress(null);
     }
   };
 
@@ -778,7 +802,9 @@ export default function App() {
       const firstBook = addPickedBooks(pdfs);
       setDriveMessage(isDriveFolder(picked) ? `Added ${pdfs.length} PDFs from “${picked.name}”.` : `Added “${picked.name}”.`);
       if (firstBook) {
-        const pdfData = await downloadGoogleDrivePdf(firstBook.driveFileId!, selection.accessToken);
+        setLoadingBookId(firstBook.id);
+        setLoadingProgress(null);
+        const pdfData = await downloadGoogleDrivePdf(firstBook.driveFileId!, selection.accessToken, setLoadingProgress);
         void cacheDrivePdf(firstBook.driveFileId!, pdfData).catch(() => undefined);
         openReader(firstBook, pdfData);
       }
@@ -786,6 +812,8 @@ export default function App() {
       setDriveMessage(driveError instanceof Error ? driveError.message : 'Unable to add from Google Drive.');
     } finally {
       setDrivePending(false);
+      setLoadingBookId(null);
+      setLoadingProgress(null);
     }
   };
 
@@ -825,7 +853,7 @@ export default function App() {
   }, [jumpToPage, page, screen]);
 
   if (screen === 'library') {
-    return <Library books={books} driveMessage={driveMessage} drivePending={drivePending} onAddFromDrive={addFromGoogleDrive} onOpen={openBook} />;
+    return <Library books={books} driveMessage={driveMessage} drivePending={drivePending} loadingBookId={loadingBookId} loadingProgress={loadingProgress} onAddFromDrive={addFromGoogleDrive} onOpen={openBook} />;
   }
 
   const notesOnPage = notes.filter((note) => note.page === page);

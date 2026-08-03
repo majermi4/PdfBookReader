@@ -191,9 +191,41 @@ export async function listFolderPdfs(folderId: string, accessToken: string): Pro
   return result.files ?? [];
 }
 
-export async function downloadGoogleDrivePdf(fileId: string, accessToken: string) {
+export async function downloadGoogleDrivePdf(
+  fileId: string,
+  accessToken: string,
+  onProgress?: (percent: number | null) => void,
+) {
   const response = await driveFetch(`files/${encodeURIComponent(fileId)}?alt=media`, accessToken);
-  return new Uint8Array(await response.arrayBuffer());
+  const totalBytes = Number(response.headers.get('content-length'));
+  if (!response.body || !Number.isFinite(totalBytes) || totalBytes <= 0) {
+    onProgress?.(null);
+    const data = new Uint8Array(await response.arrayBuffer());
+    onProgress?.(100);
+    return data;
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let receivedBytes = 0;
+  onProgress?.(0);
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    chunks.push(value);
+    receivedBytes += value.length;
+    onProgress?.(Math.min(99, Math.round((receivedBytes / totalBytes) * 100)));
+  }
+
+  const data = new Uint8Array(receivedBytes);
+  let offset = 0;
+  chunks.forEach((chunk) => {
+    data.set(chunk, offset);
+    offset += chunk.length;
+  });
+  onProgress?.(100);
+  return data;
 }
 
 export function isDriveFolder(item: DrivePickerItem) {
