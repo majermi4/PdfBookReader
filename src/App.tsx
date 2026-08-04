@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './pdfjs-compat';
-import * as pdfjs from 'pdfjs-dist';
+import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 import pdfWorkerSrc from './pdfjs-worker.ts?worker&url';
 import { cacheDrivePdf, readCachedDrivePdf } from './drive-cache';
 import {

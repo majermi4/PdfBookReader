@@ -29,8 +29,14 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify Safari PDF text extraction
+        run: npm run test:pdf-compat
+
       - name: Build app
-        run: npm ci && npm run build
+        run: npm run build
         env:
           VITE_GOOGLE_API_KEY: ${{ secrets.VITE_GOOGLE_API_KEY || vars.VITE_GOOGLE_API_KEY }}
           VITE_GOOGLE_APP_ID: ${{ secrets.VITE_GOOGLE_APP_ID || vars.VITE_GOOGLE_APP_ID }}

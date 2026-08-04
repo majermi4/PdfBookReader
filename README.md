@@ -11,6 +11,23 @@ npm run dev
 
 Open the local URL printed by Vite. Select the supplied sample book in the Library.
 
+## Verify iPad PDF text compatibility
+
+Run the regression check before deploying:
+
+```bash
+npm run test:pdf-compat
+```
+
+The check removes the `ReadableStream` async iterator that older WebKit versions
+lack, installs the app compatibility shim, and then asks the real PDF.js text
+layer to extract text from the demo PDF. To check a particular local book and
+page, provide `PDF_COMPAT_FILE` and `PDF_COMPAT_PAGE`:
+
+```bash
+PDF_COMPAT_FILE=/absolute/path/to/book.pdf PDF_COMPAT_PAGE=362 npm run test:pdf-compat
+```
+
 ## What works now
 
 - Real PDF.js canvas rendering of the supplied 422-page sample book.
